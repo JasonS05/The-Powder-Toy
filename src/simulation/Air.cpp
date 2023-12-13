@@ -7,7 +7,7 @@
 
 void Air::make_kernel(void) //used for velocity
 {
-	float s = 0.0f;
+	/*float s = 0.0f;
 	for (auto j=-1; j<2; j++)
 	{
 		for (auto i=-1; i<2; i++)
@@ -23,7 +23,16 @@ void Air::make_kernel(void) //used for velocity
 		{
 			kernel[(i+1)+3*(j+1)] *= s;
 		}
-	}
+	}*/
+	/*kernel[0] = 0.0;
+	kernel[1] = 0.0;
+	kernel[2] = 0.0;
+	kernel[3] = 0.0;
+	kernel[4] = 1.0;
+	kernel[5] = 0.0;
+	kernel[6] = 0.0;
+	kernel[7] = 0.0;
+	kernel[8] = 0.0;*/
 }
 
 void Air::Clear()
@@ -31,6 +40,7 @@ void Air::Clear()
 	std::fill(&sim.pv[0][0], &sim.pv[0][0]+NCELL, 0.0f);
 	std::fill(&sim.vy[0][0], &sim.vy[0][0]+NCELL, 0.0f);
 	std::fill(&sim.vx[0][0], &sim.vx[0][0]+NCELL, 0.0f);
+	std::fill(&sim.ec[0][0], &sim.ec[0][0]+NCELL, false); // this line may be broken due to rebase, can't be bothered to fix since it's not relevant because of later commits
 }
 
 void Air::ClearAirH()
@@ -41,12 +51,13 @@ void Air::ClearAirH()
 // Used when updating temp or velocity from far away
 const float advDistanceMult = 0.7f;
 
+// ambient heat update
 void Air::update_airh(void)
 {
 	auto &vx = sim.vx;
 	auto &vy = sim.vy;
 	auto &hv = sim.hv;
-	for (auto i=0; i<YCELLS; i++) //sets air temp on the edges every frame
+	/*for (auto i=0; i<YCELLS; i++) //sets air temp on the edges every frame
 	{
 		hv[i][0] = ambientAirTemp;
 		hv[i][1] = ambientAirTemp;
@@ -65,8 +76,8 @@ void Air::update_airh(void)
 		for (auto x=0; x<XCELLS; x++)
 		{
 			auto dh = 0.0f;
-			auto dx = 0.0f;
-			auto dy = 0.0f;
+			auto dx = 0.0f;//vx[y][x];
+			auto dy = 0.0f;//vy[y][x];
 			for (auto j=-1; j<2; j++)
 			{
 				for (auto i=-1; i<2; i++)
@@ -129,6 +140,7 @@ void Air::update_airh(void)
 					ty = y - dy*advDistanceMult;
 				}
 			}
+
 			auto i = (int)tx;
 			auto j = (int)ty;
 			tx -= i;
@@ -167,10 +179,145 @@ void Air::update_airh(void)
 			}
 		}
 	}
-	memcpy(hv, ohv, sizeof(hv));
+	memcpy(hv, ohv, sizeof(hv));*/
 }
 
-void Air::update_air(void)
+// comment out the following line to switch from lax-wendroff to lax-friedrichs
+#define WENDROFF WENDROFF
+
+typedef struct {
+	float xmomentum;
+	float ymomentum;
+	float density;
+} AirValues;
+
+const float dt = 0.1f;
+
+const float pressureDiffusion = 0.05f;
+const float velocityDiffusion = 0.05f;
+const float extremalDiffusionQuantity = 0.3f;
+
+const float friedrichDiffusion = 0.03f;
+
+float calculatePressure(float density) {
+	//density /= 15.0f;
+	//return 15.0f * (density - 2.0f * density * density + density * density * density);
+	return density;
+}
+
+AirValues calculateHorizontalEdgeFlux(AirValues leftCell,  AirValues rightCell, bool extremal) {
+	auto averageDensity = std::sqrt(leftCell.density * rightCell.density);
+
+	AirValues average = {
+		0.5f * (leftCell.xmomentum / leftCell.density + rightCell.xmomentum / rightCell.density) * averageDensity,
+		0.5f * (leftCell.ymomentum / leftCell.density + rightCell.ymomentum / rightCell.density) * averageDensity,
+		averageDensity
+	};
+
+	float left_vx = leftCell.xmomentum / leftCell.density;
+
+	AirValues left_flux = {
+		leftCell.xmomentum * left_vx + calculatePressure(leftCell.density),
+		leftCell.ymomentum * left_vx,
+		leftCell.xmomentum
+	};
+
+	float right_vx = rightCell.xmomentum / rightCell.density;
+
+	AirValues right_flux = {
+		rightCell.xmomentum * right_vx + calculatePressure(rightCell.density),
+		rightCell.ymomentum * right_vx,
+		rightCell.xmomentum
+	};
+
+	AirValues approximateValues = {
+		average.xmomentum + 0.5f * dt * (left_flux.xmomentum - right_flux.xmomentum),
+		average.ymomentum + 0.5f * dt * (left_flux.ymomentum - right_flux.ymomentum),
+		std::max(average.density + 0.5f * dt * (left_flux.density - right_flux.density), 0.1f)
+	};
+
+	#ifdef WENDROFF
+	float approximate_vx = approximateValues.xmomentum / approximateValues.density;
+	float extremalDiffusion = 0.0f;
+	if (extremal) extremalDiffusion = extremalDiffusionQuantity;// + std::hypot(approximateValues.xmomentum, approximateValues.ymomentum) / approximateValues.density;
+
+	return {
+		approximateValues.xmomentum * approximate_vx + (velocityDiffusion + extremalDiffusion) * (leftCell.xmomentum - rightCell.xmomentum) + calculatePressure(approximateValues.density),
+		approximateValues.ymomentum * approximate_vx + (velocityDiffusion + extremalDiffusion) * (leftCell.ymomentum - rightCell.ymomentum),
+		approximateValues.xmomentum + (pressureDiffusion + extremalDiffusion) * (leftCell.density - rightCell.density)
+	};
+	#else
+	float newFriedrichDiffusion = friedrichDiffusion + std::max(std::hypot(leftCell.xmomentum, leftCell.ymomentum) / leftCell.density, std::hypot(rightCell.xmomentum, rightCell.ymomentum) / rightCell.density) * 0.5f;
+	return {
+		0.5f * (right_flux.xmomentum + left_flux.xmomentum) + newFriedrichDiffusion * (leftCell.xmomentum - rightCell.xmomentum),
+		0.5f * (right_flux.ymomentum + left_flux.ymomentum) + newFriedrichDiffusion * (leftCell.ymomentum - rightCell.ymomentum),
+		0.5f * (right_flux.density + left_flux.density) + newFriedrichDiffusion * (leftCell.density - rightCell.density)
+	};
+	#endif
+}
+
+AirValues calculateVerticalEdgeFlux(AirValues lowerCell,  AirValues upperCell, bool extremal) {
+	auto averageDensity = std::sqrt(lowerCell.density * upperCell.density);
+
+	AirValues average = {
+		0.5f * (lowerCell.xmomentum / lowerCell.density + upperCell.xmomentum / upperCell.density) * averageDensity,
+		0.5f * (lowerCell.ymomentum / lowerCell.density + upperCell.ymomentum / upperCell.density) * averageDensity,
+		averageDensity
+	};
+
+	float lower_vy = lowerCell.ymomentum / lowerCell.density;
+
+	AirValues lower_flux = {
+		lowerCell.xmomentum * lower_vy,
+		lowerCell.ymomentum * lower_vy + calculatePressure(lowerCell.density),
+		lowerCell.ymomentum
+	};
+
+	float upper_vy = upperCell.ymomentum / upperCell.density;
+
+	AirValues upper_flux = {
+		upperCell.xmomentum * upper_vy,
+		upperCell.ymomentum * upper_vy + calculatePressure(upperCell.density),
+		upperCell.ymomentum
+	};
+
+	AirValues approximateValues = {
+		average.xmomentum + 0.5f * dt * (lower_flux.xmomentum - upper_flux.xmomentum),
+		average.ymomentum + 0.5f * dt * (lower_flux.ymomentum - upper_flux.ymomentum),
+		std::max(average.density + 0.5f * dt * (lower_flux.density - upper_flux.density), 0.1f)
+	};
+
+	#ifdef WENDROFF
+	float approximate_vy = approximateValues.ymomentum / approximateValues.density;
+	float extremalDiffusion = 0.0f;
+	if (extremal) extremalDiffusion = extremalDiffusionQuantity;// + std::hypot(approximateValues.xmomentum, approximateValues.ymomentum) / approximateValues.density;
+
+	return {
+		approximateValues.xmomentum * approximate_vy + (velocityDiffusion + extremalDiffusion) * (lowerCell.xmomentum - upperCell.xmomentum),
+		approximateValues.ymomentum * approximate_vy + (velocityDiffusion + extremalDiffusion) * (lowerCell.ymomentum - upperCell.ymomentum) + calculatePressure(approximateValues.density),
+		approximateValues.ymomentum + (pressureDiffusion + extremalDiffusion) * (lowerCell.density - upperCell.density)
+	};
+	#else
+	float newFriedrichDiffusion = friedrichDiffusion + std::max(std::hypot(lowerCell.xmomentum, lowerCell.ymomentum) / lowerCell.density, std::hypot(upperCell.xmomentum, upperCell.ymomentum) / upperCell.density) * 0.5f;
+	return {
+		0.5f * (lower_flux.xmomentum + upper_flux.xmomentum) + newFriedrichDiffusion * (lowerCell.xmomentum - upperCell.xmomentum),
+		0.5f * (lower_flux.ymomentum + upper_flux.ymomentum) + newFriedrichDiffusion * (lowerCell.ymomentum - upperCell.ymomentum),
+		0.5f * (lower_flux.density + upper_flux.density) + newFriedrichDiffusion * (lowerCell.density - upperCell.density)
+	};
+	#endif
+}
+
+float pclamp(float pressure) {
+	return std::clamp(pressure, -10.0f, MAX_PRESSURE);
+}
+
+const float MAX_VELOCITY = 3.0f;
+
+void Air::update_air(void) {
+	for (int i = 0; i < 3; i++) update_air_();
+}
+
+void Air::update_air_(void)
 {
 	auto &vx = sim.vx;
 	auto &vy = sim.vy;
@@ -211,7 +358,7 @@ void Air::update_air(void)
 			vy[YCELLS-1][i] = vy[YCELLS-1][i]*0.9f;
 		}
 
-		for (auto j=1; j<YCELLS-1; j++) //clear some velocities near walls
+		for (auto j=1; j<YCELLS-1; j++) // clear some pressures and velocities near walls and limit pressures/velocities
 		{
 			for (auto i=1; i<XCELLS-1; i++)
 			{
@@ -223,11 +370,55 @@ void Air::update_air(void)
 					vy[j][i] = 0.0f;
 					vy[j-1][i] = 0.0f;
 					vy[j+1][i] = 0.0f;
+					pv[j][i] = 0.0f;
+				}
+
+				pv[j][i] = pclamp(pv[j][i]);
+
+				float speed = std::hypot(vx[j][i], vy[j][i]) / (pv[j][i] + 10.1f);
+
+				if (speed > MAX_VELOCITY) {
+					vx[j][i] *= MAX_VELOCITY / speed;
+					vy[j][i] *= MAX_VELOCITY / speed;
 				}
 			}
 		}
 
-		for (auto y=1; y<YCELLS-1; y++) //pressure adjustments from velocity
+		for (auto y = 0; y < YCELLS; y++) {
+			for (auto x = 0; x < XCELLS; x++) {
+				// x +/- 1
+				auto xm1 = std::max(x - 1, 0);
+				auto xp1 = std::min(x + 1, XCELLS - 1);
+
+				if (bmap_blockair[y][xm1]) xm1 = x;
+				if (bmap_blockair[y][xp1]) xp1 = x;
+
+				// y +/- 1
+				auto ym1 = std::max(y - 1, 0);
+				auto yp1 = std::min(y + 1, YCELLS - 1);
+
+				if (bmap_blockair[ym1][x]) ym1 = y;
+				if (bmap_blockair[yp1][x]) yp1 = y;
+
+				ec[y][x] =
+					(pv[y][x] > pv[y][xm1] && pv[y][x] > pv[y][xp1]) ||
+					(pv[y][x] < pv[y][xm1] && pv[y][x] < pv[y][xp1]) ||
+					(pv[y][x] > pv[ym1][x] && pv[y][x] > pv[yp1][x]) ||
+					(pv[y][x] < pv[ym1][x] && pv[y][x] < pv[yp1][x]);
+				/*||
+					(vx[y][x] > vx[y][xm1] && vx[y][x] > vx[y][xp1]) ||
+					(vx[y][x] < vx[y][xm1] && vx[y][x] < vx[y][xp1]) ||
+					(vx[y][x] > vx[ym1][x] && vx[y][x] > vx[yp1][x]) ||
+					(vx[y][x] < vx[ym1][x] && vx[y][x] < vx[yp1][x])
+				||
+					(vy[y][x] > vy[y][xm1] && vy[y][x] > vy[y][xp1]) ||
+					(vy[y][x] < vy[y][xm1] && vy[y][x] < vy[y][xp1]) ||
+					(vy[y][x] > vy[ym1][x] && vy[y][x] > vy[yp1][x]) ||
+					(vy[y][x] < vy[ym1][x] && vy[y][x] < vy[yp1][x]);*/
+			}
+		}
+
+		/*for (auto y=1; y<YCELLS-1; y++) //pressure adjustments from velocity
 		{
 			for (auto x=1; x<XCELLS-1; x++)
 			{
@@ -235,7 +426,7 @@ void Air::update_air(void)
 				dp += vx[y][x-1] - vx[y][x+1];
 				dp += vy[y-1][x] - vy[y+1][x];
 				pv[y][x] *= AIR_PLOSS;
-				pv[y][x] += dp*AIR_TSTEPP * 0.5f;;
+				pv[y][x] += dp*AIR_TSTEPP * 0.5f;
 			}
 		}
 
@@ -256,16 +447,72 @@ void Air::update_air(void)
 				if (bmap_blockair[y-1][x] || bmap_blockair[y][x] || bmap_blockair[y+1][x])
 					vy[y][x] = 0;
 			}
-		}
+		}*/
 
 		for (auto y=0; y<YCELLS; y++) //update velocity and pressure
 		{
 			for (auto x=0; x<XCELLS; x++)
 			{
-				auto dx = 0.0f;
-				auto dy = 0.0f;
-				auto dp = 0.0f;
-				for (auto j=-1; j<2; j++)
+				auto dx = vx[y][x];
+				auto dy = vy[y][x];
+				auto dp = pv[y][x];
+
+				// x +/- 1
+				auto xm1 = std::max(x - 1, 0);
+				auto xp1 = std::min(x + 1, XCELLS - 1);
+
+				if (bmap_blockair[y][xm1]) xm1 = x;
+				if (bmap_blockair[y][xp1]) xp1 = x;
+
+				// y +/- 1
+				auto ym1 = std::max(y - 1, 0);
+				auto yp1 = std::min(y + 1, YCELLS - 1);
+
+				if (bmap_blockair[ym1][x]) ym1 = y;
+				if (bmap_blockair[yp1][x]) yp1 = y;
+
+				AirValues thisCell = {
+					vx[y][x],
+					-vy[y][x],
+					pv[y][x] + 10.1f
+				};
+
+				AirValues leftCell = {
+					vx[y][xm1],
+					-vy[y][xm1],
+					pv[y][xm1] + 10.1f
+				};
+
+				AirValues rightCell = {
+					vx[y][xp1],
+					-vy[y][xp1],
+					pv[y][xp1] + 10.1f
+				};
+
+				AirValues lowerCell = {
+					vx[yp1][x],
+					-vy[yp1][x],
+					pv[yp1][x] + 10.1f
+				};
+
+				AirValues upperCell {
+					vx[ym1][x],
+					-vy[ym1][x],
+					pv[ym1][x] + 10.1f
+				};
+
+				auto leftFlux = calculateHorizontalEdgeFlux(leftCell, thisCell, ec[y][xm1] || ec[y][x]);
+				auto rightFlux = calculateHorizontalEdgeFlux(thisCell, rightCell, ec[y][x] || ec[y][xp1]);
+				auto lowerFlux = calculateVerticalEdgeFlux(lowerCell, thisCell, ec[yp1][x] || ec[y][x]);
+				auto upperFlux = calculateVerticalEdgeFlux(thisCell, upperCell, ec[y][x] || ec[ym1][x]);
+
+				dx += dt * (leftFlux.xmomentum + lowerFlux.xmomentum - rightFlux.xmomentum - upperFlux.xmomentum);
+				dy -= dt * (leftFlux.ymomentum + lowerFlux.ymomentum - rightFlux.ymomentum - upperFlux.ymomentum);
+				dp += dt * (leftFlux.density + lowerFlux.density - rightFlux.density - upperFlux.density);
+
+				//dy += dt * 0.01f * (dp + 10.01f);
+
+				/*for (auto j=-1; j<2; j++)
 				{
 					for (auto i=-1; i<2; i++)
 					{
@@ -349,21 +596,28 @@ void Air::update_air(void)
 
 					dx += AIR_VADV*tx*ty*vx[j+1][i+1];
 					dy += AIR_VADV*tx*ty*vy[j+1][i+1];
-				}
+				}*/
 
 				if (bmap[y][x] == WL_FAN)
 				{
 					dx += fvx[y][x];
 					dy += fvy[y][x];
 				}
-				// pressure/velocity caps
-				if (dp > MAX_PRESSURE) dp = MAX_PRESSURE;
-				if (dp < MIN_PRESSURE) dp = MIN_PRESSURE;
-				if (dx > MAX_PRESSURE) dx = MAX_PRESSURE;
-				if (dx < MIN_PRESSURE) dx = MIN_PRESSURE;
-				if (dy > MAX_PRESSURE) dy = MAX_PRESSURE;
-				if (dy < MIN_PRESSURE) dy = MIN_PRESSURE;
 
+				// pressure caps
+				if (std::isnan(dp)) dp = 0.0f;
+				if (dp > MAX_PRESSURE) dp = MAX_PRESSURE;
+				if (dp < -10.0f /*MIN_PRESSURE*/) dp = -10.0f /*MIN_PRESSURE*/;
+
+				// velocity caps
+				if (std::isnan(dx)) dx = 0.0f;
+				if (std::isnan(dy)) dy = 0.0f;
+
+				float speed = std::hypot(dx, dy) / (dp + 10.1f);
+				if (speed > MAX_VELOCITY) {
+					dx *= MAX_VELOCITY / speed;
+					dy *= MAX_VELOCITY / speed;
+				}
 
 				switch (airMode)
 				{
