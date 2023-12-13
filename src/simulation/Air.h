@@ -23,6 +23,7 @@ public:
 	float opv[YCELLS][XCELLS];
 	float hv[YCELLS][XCELLS];
 	float ohv[YCELLS][XCELLS]; // Ambient Heat
+	bool ec[YCELLS][XCELLS]; // extremal cells (cells with values greater than their neighbors)
 	unsigned char bmap_blockair[YCELLS][XCELLS];
 	unsigned char bmap_blockairh[YCELLS][XCELLS];
 	float kernel[9];
@@ -34,4 +35,6 @@ public:
 	void Invert();
 	void ApproximateBlockAirMaps();
 	Air(Simulation & sim);
+private:
+	void update_air_(void);
 };
