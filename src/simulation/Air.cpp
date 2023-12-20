@@ -193,8 +193,8 @@ typedef struct {
 
 const float dt = 0.1f;
 
-const float pressureDiffusion = 0.05f;
-const float velocityDiffusion = 0.05f;
+const float pressureDiffusion = 0.0f;
+const float velocityDiffusion = 0.0f;
 const float extremalDiffusionQuantity = 0.3f;
 
 const float friedrichDiffusion = 0.03f;
@@ -311,8 +311,6 @@ float pclamp(float pressure) {
 	return std::clamp(pressure, -10.0f, MAX_PRESSURE);
 }
 
-const float MAX_VELOCITY = 3.0f;
-
 void Air::update_air(void) {
 	for (int i = 0; i < 3; i++) update_air_();
 }
@@ -377,9 +375,9 @@ void Air::update_air_(void)
 
 				float speed = std::hypot(vx[j][i], vy[j][i]) / (pv[j][i] + 10.1f);
 
-				if (speed > MAX_VELOCITY) {
-					vx[j][i] *= MAX_VELOCITY / speed;
-					vy[j][i] *= MAX_VELOCITY / speed;
+				if (speed > 3.0f) {
+					vx[j][i] *= 3.0f / speed;
+					vy[j][i] *= 3.0f / speed;
 				}
 			}
 		}
@@ -614,9 +612,9 @@ void Air::update_air_(void)
 				if (std::isnan(dy)) dy = 0.0f;
 
 				float speed = std::hypot(dx, dy) / (dp + 10.1f);
-				if (speed > MAX_VELOCITY) {
-					dx *= MAX_VELOCITY / speed;
-					dy *= MAX_VELOCITY / speed;
+				if (speed > 3.0f) {
+					dx *= 3.0f / speed;
+					dy *= 3.0f / speed;
 				}
 
 				switch (airMode)
