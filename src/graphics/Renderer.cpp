@@ -960,9 +960,11 @@ void Renderer::draw_air()
 				int g;
 				int b;
 				// velocity adds grey
-				r = clamp_flt(fabsf(vx[y][x]), 0.0f, 24.0f) + clamp_flt(fabsf(vy[y][x]), 0.0f, 20.0f);
-				g = clamp_flt(fabsf(vx[y][x]), 0.0f, 20.0f) + clamp_flt(fabsf(vy[y][x]), 0.0f, 24.0f);
-				b = clamp_flt(fabsf(vx[y][x]), 0.0f, 24.0f) + clamp_flt(fabsf(vy[y][x]), 0.0f, 20.0f);
+				float brightness = std::hypot(vx[y][x], vy[y][x]);
+				float greenness = 2.0f * fabsf(fabsf(2.0f / 3.1415926f * std::atan2(vy[y][x], vx[y][x])) - 1.0f) - 1.0f;
+				r = clamp_flt(brightness, 0.0f, 20.0f + 4.0f * std::clamp( greenness, 0.0f, 1.0f));
+				g = clamp_flt(brightness, 0.0f, 20.0f + 4.0f * std::clamp(-greenness, 0.0f, 1.0f));
+				b = clamp_flt(brightness, 0.0f, 20.0f + 4.0f * std::clamp( greenness, 0.0f, 1.0f));
 				if (pv[y][x] > 0.0f)
 				{
 					r += clamp_flt(pv[y][x], 0.0f, 16.0f);//pressure adds red!
