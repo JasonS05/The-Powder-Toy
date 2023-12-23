@@ -16,7 +16,6 @@ public:
 	bool ec[YCELLS][XCELLS]; // extremal cells (cells with values greater than their neighbors)
 	unsigned char bmap_blockair[YCELLS][XCELLS];
 	unsigned char bmap_blockairh[YCELLS][XCELLS];
-	float kernel[9];
 	void make_kernel(void);
 	void update_airh(void);
 	void update_air(void);
