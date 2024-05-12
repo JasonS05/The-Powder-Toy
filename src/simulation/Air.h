@@ -1,11 +1,14 @@
 #pragma once
 #include "SimulationConfig.h"
+#include "compute/AirShader.h"
 
 class Simulation;
 
 class Air
 {
 public:
+	AirShader air_shader;
+
 	Simulation & sim;
 	int airMode;
 	float ambientAirTemp;
@@ -24,6 +27,4 @@ public:
 	void Invert();
 	void ApproximateBlockAirMaps();
 	Air(Simulation & sim);
-private:
-	void update_air_(void);
 };
