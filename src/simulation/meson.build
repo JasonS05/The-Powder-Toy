@@ -15,6 +15,7 @@ simulation_files = files(
 subdir('elements')
 subdir('simtools')
 subdir('gravity')
+subdir('compute')
 
 powder_files += files(
 	'AccessPropertyParse.cpp',
