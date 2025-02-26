@@ -46,9 +46,6 @@ struct CellData {
 	bool wall;
 };
 
-const float dt = 0.1;
-const vec4 diffusion = vec4(1.0) * 0.1;
-
 CellData getCell(ivec2 pos) {
 	CellData data = CellData(0.0, 0.0, 0.0, 0.0, false);
 	int x = pos.x;
@@ -75,30 +72,66 @@ CellData toCellData(vec4 data, bool wall) {
 	return CellData(data.x, data.y, data.z, data.w, wall);
 }
 
-vec4 getFluxH(vec4 cell) {
-	vec4 momentumFlux = vec4(cell.z, 0.0, 0.0, 0.0);
+const float PI  = 3.14159265359;
+const float TAU = 2.0 * PI;
 
-	vec4 advectionFlux = cell * cell.x / cell.z;
+const float massConstant  = -0.5 * log(TAU);
+const float massLinear    = sqrt(PI * 0.5);
+const float massQuadratic = 0.5 - PI * 0.25;
 
-	return momentumFlux + advectionFlux;
+const float momentumConstant  = -log(2.0);
+const float momentumLinear    = 2.0 * sqrt(2.0 / PI);
+const float momentumQuadratic = 1.0 - 4.0 / PI;
+
+const float energyConstant  = -0.5 * log(TAU);
+const float energyLinear    = 0.75 * sqrt(TAU);
+const float energyQuadratic = 1.5 - 0.5625 * PI;
+
+const vec3 constantFactor  = vec3(massConstant , momentumConstant , energyConstant );
+const vec3 linearFactor    = vec3(massLinear   , momentumLinear   , energyLinear   );
+const vec3 quadraticFactor = vec3(massQuadratic, momentumQuadratic, energyQuadratic);
+
+vec3 approx_exp(vec3 x) {
+	return 1.0 / (1.0 - x * (1.0 - x * (1.0 / 2.0 - x * (1.0 / 6.0 - x * (1.0 / 24.0 - x * (1.0 / 120.0))))));
 }
 
-vec4 computeEdgeFluxH(vec4 leftCell, vec4 rightCell) {
-	vec2 averageVelocity = (leftCell.xy / leftCell.z + rightCell.xy / rightCell.z) * 0.5;
-	float averageDensity = sqrt(leftCell.z * rightCell.z);
+/* JavaScript
+function massFlux(x, T, sqrtT, isqrtT) {
+	function math(x) {
+		return approx_exp(massConstant + x * (massLinear + x * massQuadratic));
+	}
 
-	vec4 average = vec4(averageVelocity * averageDensity, averageDensity, 0.0);
-	average += dt * (getFluxH(leftCell) - getFluxH(rightCell)) * 0.5;
-
-	average.z = max(average.z, 0.1);
-
-	vec4 diffusionFlux = (leftCell - rightCell) * diffusion;//(leftCell - rightCell) * (1.0 + length(average.xy / average.z)) * 0.5;
-
-	return diffusionFlux + getFluxH(average);//momentumFlux + advectionFlux;
+	return x < 0 ? sqrtT * math(x * isqrtT) : x + sqrtT * math(-x * isqrtT);
 }
 
-vec4 computeEdgeFluxV(vec4 lowerCell, vec4 upperCell) {
-	return computeEdgeFluxH(lowerCell.yxzw, upperCell.yxzw).yxzw;
+function momentumFlux(x, T, sqrtT, isqrtT) {
+	function math(x) {
+		return approx_exp(momentumConstant + x * (momentumLinear + x * momentumQuadratic));
+	}
+
+	return x < 0 ? T * math(x * isqrtT) : x * x + T - T * math(-x * isqrtT);
+}
+
+function energyFlux(x, T, sqrtT, isqrtT) {
+	function math(x) {
+		return approx_exp(energyConstant + x * (energyLinear + x * energyQuadratic));
+	}
+
+	return x < 0 ? T * sqrtT * math(x * isqrtT): (3 * T + x * x) * x * 0.5 + T * sqrtT * math(-x * isqrtT);
+}
+*/
+
+vec4 getFlux(vec4 cell) {
+	float velocity = cell.x / cell.z;
+	float speed = abs(velocity);
+	vec3 exponents = approx_exp(constantFactor - speed * (linearFactor - speed * quadraticFactor));
+	vec3 quantities = exponents;
+
+	if (velocity > 0) {
+		quantities = quantities * vec3(1, -1, 1) + vec3(velocity, velocity * velocity + 1.0, (3 + velocity * velocity) * velocity * 0.5);
+	}
+
+	return vec4(quantities.yxxz * cell.zyzz);
 }
 
 void main() {
@@ -112,7 +145,7 @@ void main() {
 
 	vec4 upperFlux = vec4(0);
 	vec4 lowerFlux = vec4(0);
-	vec4 leftFlux = vec4(0);
+	vec4 leftFlux  = vec4(0);
 	vec4 rightFlux = vec4(0);
 
 	CellData thisCellData = getCell(pos);
@@ -125,21 +158,61 @@ void main() {
 		CellData leftCellData  = getCell(pos + ivec2(-1,  0));
 		CellData rightCellData = getCell(pos + ivec2( 1,  0));
 
-		vec4 upperCell = upperCellData.wall ? thisCell : toVec4(upperCellData);
-		vec4 lowerCell = lowerCellData.wall ? thisCell : toVec4(lowerCellData);
-		vec4 leftCell  = leftCellData.wall  ? thisCell : toVec4(leftCellData);
-		vec4 rightCell = rightCellData.wall ? thisCell : toVec4(rightCellData);
+		vec4 upperCell = upperCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(upperCellData);
+		vec4 lowerCell = lowerCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(lowerCellData);
+		vec4 leftCell  = leftCellData.wall  ? thisCell * vec4(-1, 1, 1, 1) : toVec4(leftCellData);
+		vec4 rightCell = rightCellData.wall ? thisCell * vec4(-1, 1, 1, 1) : toVec4(rightCellData);
 
-		upperFlux = computeEdgeFluxV(thisCell , upperCell);
-		lowerFlux = computeEdgeFluxV(lowerCell, thisCell );
-		leftFlux  = computeEdgeFluxH(leftCell , thisCell );
-		rightFlux = computeEdgeFluxH(thisCell , rightCell);
+		vec4 logUpperCell = vec4(upperCell.xy, log(upperCell.zw));
+		vec4 logLowerCell = vec4(lowerCell.xy, log(lowerCell.zw));
+		vec4 logLeftCell  = vec4(leftCell .xy, log(leftCell .zw));
+		vec4 logRightCell = vec4(rightCell.xy, log(rightCell.zw));
+		vec4 logThisCell  = vec4(thisCell .xy, log(thisCell .zw));
+
+		vec4 logUpperEdge = logThisCell + (logUpperCell - logLowerCell) * 0.25;
+		vec4 logLowerEdge = logThisCell + (logLowerCell - logUpperCell) * 0.25;
+		vec4 logLeftEdge  = logThisCell + (logLeftCell  - logRightCell) * 0.25;
+		vec4 logRightEdge = logThisCell + (logRightCell - logLeftCell ) * 0.25;
+
+		vec4 upperEdge = vec4(logUpperEdge.xy, exp(logUpperEdge.zw));
+		vec4 lowerEdge = vec4(logLowerEdge.xy, exp(logLowerEdge.zw));
+		vec4 leftEdge  = vec4(logLeftEdge .xy, exp(logLeftEdge .zw));
+		vec4 rightEdge = vec4(logRightEdge.xy, exp(logRightEdge.zw));
+
+		if (!upperCellData.wall) {
+			upperFlux = getFlux(upperEdge.yxzw).yxzw;
+		} else {
+			upperFlux = vec4(0, thisCell.z, 0, 0);
+		}
+
+		if (!lowerCellData.wall) {
+			lowerFlux = getFlux(lowerEdge.yxzw * vec4(-1, 1, 1, 1)).yxzw * vec4(-1, 1, -1, -1);
+		} else {
+			lowerFlux = vec4(0, thisCell.z, 0, 0);
+		}
+
+		if (!leftCellData.wall) {
+			leftFlux = getFlux(leftEdge * vec4(-1, 1, 1, 1)) * vec4(1, -1, -1, -1);
+		} else {
+			leftFlux = vec4(thisCell.z, 0, 0, 0);
+		}
+
+		if (!rightCellData.wall) {
+			rightFlux = getFlux(rightEdge);
+		} else {
+			rightFlux = vec4(thisCell.z, 0, 0, 0);
+		}
+	} else {
+		upperFlux = vec4(0);
+		lowerFlux = vec4(0);
+		leftFlux  = vec4(0);
+		rightFlux = vec4(0);
 	}
 
-	dataFlux[(y * XCELLS + x) * 4 + 0] = upperFlux * 0.5;
-	dataFlux[(y * XCELLS + x) * 4 + 1] = lowerFlux * 0.5;
-	dataFlux[(y * XCELLS + x) * 4 + 2] = leftFlux * 0.5;
-	dataFlux[(y * XCELLS + x) * 4 + 3] = rightFlux * 0.5;
+	dataFlux[(y * XCELLS + x) * 4 + 0] = upperFlux;
+	dataFlux[(y * XCELLS + x) * 4 + 1] = lowerFlux;
+	dataFlux[(y * XCELLS + x) * 4 + 2] = leftFlux;
+	dataFlux[(y * XCELLS + x) * 4 + 3] = rightFlux;
 }
 	)"));
 
@@ -179,7 +252,7 @@ struct CellData {
 	bool wall;
 };
 
-const float dt = 0.1;
+const float dt = 0.01;
 
 CellData getCell(ivec2 pos) {
 	CellData data = CellData(0.0, 0.0, 0.0, 0.0, false);
@@ -287,34 +360,10 @@ void main() {
 		CellData leftCellData  = getCell(ivec2(leftX , y     ));
 		CellData rightCellData = getCell(ivec2(rightX, y     ));
 
-		vec4 upperFlux = dataFlux[(y * XCELLS + x) * 4 + 0];
-		vec4 lowerFlux = dataFlux[(y * XCELLS + x) * 4 + 1];
-		vec4 leftFlux  = dataFlux[(y * XCELLS + x) * 4 + 2];
-		vec4 rightFlux = dataFlux[(y * XCELLS + x) * 4 + 3];
-
-		if (!upperCellData.wall) {
-			upperFlux += dataFlux[(upperY * XCELLS + x) * 4 + 1];
-		} else {
-			upperFlux *= 2.0;
-		}
-
-		if (!lowerCellData.wall) {
-			lowerFlux += dataFlux[(lowerY * XCELLS + x) * 4 + 0];
-		} else {
-			lowerFlux *= 2.0;
-		}
-
-		if (!leftCellData.wall) {
-			leftFlux += dataFlux[(y * XCELLS + leftX) * 4 + 3];
-		} else {
-			leftFlux *= 2.0;
-		}
-
-		if (!rightCellData.wall) {
-			rightFlux += dataFlux[(y * XCELLS + rightX) * 4 + 2];
-		} else {
-			rightFlux *= 2.0;
-		}
+		vec4 upperFlux = dataFlux[(y * XCELLS + x) * 4 + 0] + dataFlux[(upperY * XCELLS + x     ) * 4 + 1];
+		vec4 lowerFlux = dataFlux[(y * XCELLS + x) * 4 + 1] + dataFlux[(lowerY * XCELLS + x     ) * 4 + 0];
+		vec4 leftFlux  = dataFlux[(y * XCELLS + x) * 4 + 2] + dataFlux[(y      * XCELLS + leftX ) * 4 + 3];
+		vec4 rightFlux = dataFlux[(y * XCELLS + x) * 4 + 3] + dataFlux[(y      * XCELLS + rightX) * 4 + 2];
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt;
 	}

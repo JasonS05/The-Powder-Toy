@@ -68,18 +68,14 @@ void Air::update_air(void)
 			vy[YCELLS-1][i] = vy[YCELLS-1][i]*0.9f;
 		}
 
-		for (auto j=1; j<YCELLS-1; j++) // clear some pressures and velocities near walls and limit pressures/velocities
+		for (auto j=1; j<YCELLS-1; j++) // clear pressures and velocities inside walls and limit pressures
 		{
 			for (auto i=1; i<XCELLS-1; i++)
 			{
 				if (bmap_blockair[j][i])
 				{
 					vx[j][i] = 0.0f;
-					vx[j][i-1] = 0.0f;
-					vx[j][i+1] = 0.0f;
 					vy[j][i] = 0.0f;
-					vy[j-1][i] = 0.0f;
-					vy[j+1][i] = 0.0f;
 					pv[j][i] = 0.0f;
 				}
 
@@ -89,7 +85,7 @@ void Air::update_air(void)
 
 		air_shader.init(); // does nothing after the first invocation
 		air_shader.upload(this);
-		air_shader.run(8);
+		air_shader.run(80);
 		air_shader.download(this);
 	}
 }
