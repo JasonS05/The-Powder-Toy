@@ -437,9 +437,7 @@ else
 	ident_platform = 'UNKNOWN'
 endif
 
-project_deps = [
-	dependency('glew'),
-]
+project_deps = []
 data_files = []
 powder_deps = []
 

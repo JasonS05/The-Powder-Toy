@@ -1,4 +1,5 @@
 simulation_files += files(
 	'ComputeShader.cpp',
-    'AirShader.cpp'
+    'AirShader.cpp',
+	'Funcs.cpp'
 )

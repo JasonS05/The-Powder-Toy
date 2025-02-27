@@ -1,8 +1,10 @@
 #include "ComputeShader.h"
-#include <GL/glew.h>
+#include "Funcs.h"
 #include <string>
 #include <stdexcept>
 #include <iostream>
+
+using namespace Voxren::Gl;
 
 ComputeShader::ComputeShader(const char * programText) {
     unsigned int shader = glCreateShader(GL_COMPUTE_SHADER);

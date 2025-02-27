@@ -4,7 +4,9 @@
 #include "common/tpt-rand.h"
 #include <cmath>
 #include <algorithm>
-#include <GL/glew.h>
+#include "compute/Funcs.h"
+
+using namespace Voxren::Gl;
 
 void Air::Clear()
 {
