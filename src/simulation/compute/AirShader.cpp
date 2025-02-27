@@ -13,6 +13,7 @@ AirShader::AirShader() {}
 void AirShader::init() {
 	if (initialized) return;
 
+	// this shader computes the flux
 	shader1 = std::move(ComputeShader(R"(
 #version 430
 
@@ -36,6 +37,8 @@ layout(std430, binding = 2) readonly restrict buffer ConfigStruct {
 	uint pvOffset;
 	uint hvOffset;
 	uint wallOffset;
+	float dt;
+	float velocityCap;
 };
 
 struct CellData {
@@ -60,6 +63,13 @@ CellData getCell(ivec2 pos) {
 	}
 
 	data.pv = clamp(data.pv + 10.1, 0.1, 266.1);
+
+	float velocity = length(vec2(data.vx, data.vy)) / data.pv;
+
+	if (velocity > velocityCap) {
+		data.vx = data.vx / velocity * velocityCap;
+		data.vy = data.vy / velocity * velocityCap;
+	}
 
 	return data;
 }
@@ -216,6 +226,7 @@ void main() {
 }
 	)"));
 
+	// this shader takes the fluxes and the old state and computes the new state with the given timestep size
 	shader2 = std::move(ComputeShader(R"(
 #version 430
 
@@ -242,7 +253,11 @@ layout(std430, binding = 3) readonly restrict buffer ConfigStruct {
 	uint pvOffset;
 	uint hvOffset;
 	uint wallOffset;
+	float dt;
+	float velocityCap;
 };
+
+layout(location = 1) uniform float dtMultiplier = 1.0;
 
 struct CellData {
 	float vx;
@@ -251,8 +266,6 @@ struct CellData {
 	float hv;
 	bool wall;
 };
-
-const float dt = 0.01;
 
 CellData getCell(ivec2 pos) {
 	CellData data = CellData(0.0, 0.0, 0.0, 0.0, false);
@@ -269,6 +282,13 @@ CellData getCell(ivec2 pos) {
 
 	data.pv = clamp(data.pv + 10.1, 0.1, 266.1);
 
+	float velocity = length(vec2(data.vx, data.vy)) / data.pv;
+
+	if (velocity > velocityCap) {
+		data.vx = data.vx / velocity * velocityCap;
+		data.vy = data.vy / velocity * velocityCap;
+	}
+
 	return data;
 }
 
@@ -276,31 +296,25 @@ void setCell(ivec2 pos, CellData data) {
 	int x = pos.x;
 	int y = pos.y;
 
+	data.pv = clamp(data.pv, 0.1, 266.1);
+
 	float velocity = length(vec2(data.vx, data.vy)) / data.pv;
-	float maxVelocity = (0.5 / dt - 1.0) / sqrt(2.0);
 
-	if (velocity > maxVelocity) {
-		data.vx = data.vx / velocity * maxVelocity;
-		data.vy = data.vy / velocity * maxVelocity;
+	if (velocity > velocityCap) {
+		data.vx = data.vx / velocity * velocityCap;
+		data.vy = data.vy / velocity * velocityCap;
 	}
 
-	data.pv = clamp(data.pv - 10.1, -10.0, 256.0);
+	data.pv -= 10.1;
 
-	if (isnan(data.vx)) {
+	if (isnan(data.vx) || isnan(data.vy) || isnan(data.pv) || isnan(data.hv)) {
 		data.vx = 0.0;
-	}
-
-	if (isnan(data.vy)) {
 		data.vy = 0.0;
-	}
-
-	if (isnan(data.pv)) {
 		data.pv = 0.0;
-	}
-
-	if (isnan(data.hv)) {
 		data.hv = 0.0;
 	}
+
+	data.hv = 1.0;
 
 	dataOut[(y * XCELLS + x) * dataSize + vxOffset] = data.vx;
 	dataOut[(y * XCELLS + x) * dataSize + vyOffset] = data.vy;
@@ -335,35 +349,204 @@ void main() {
 		int leftX  = x - 1;
 		int rightX = x + 1;
 
-		if (upperY == -1) {
-			upperY++;
+		if (upperY < 0) {
+			upperY = 0;
 		}
 
-		if (lowerY == YCELLS) {
-			lowerY--;
+		if (lowerY >= YCELLS) {
+			lowerY = int(YCELLS) - 1;
 		}
 
-		if (leftX == -1) {
-			leftX++;
+		if (leftX < 0) {
+			leftX = 0;
 		}
 
-		if (rightX == XCELLS) {
-			rightX--;
+		if (rightX >= XCELLS) {
+			rightX = int(XCELLS) - 1;
 		}
-
-		if (x >= XCELLS || y >= YCELLS) {
-			return;
-		}
-
-		CellData upperCellData = getCell(ivec2(x     , upperY));
-		CellData lowerCellData = getCell(ivec2(x     , lowerY));
-		CellData leftCellData  = getCell(ivec2(leftX , y     ));
-		CellData rightCellData = getCell(ivec2(rightX, y     ));
 
 		vec4 upperFlux = dataFlux[(y * XCELLS + x) * 4 + 0] + dataFlux[(upperY * XCELLS + x     ) * 4 + 1];
 		vec4 lowerFlux = dataFlux[(y * XCELLS + x) * 4 + 1] + dataFlux[(lowerY * XCELLS + x     ) * 4 + 0];
 		vec4 leftFlux  = dataFlux[(y * XCELLS + x) * 4 + 2] + dataFlux[(y      * XCELLS + leftX ) * 4 + 3];
 		vec4 rightFlux = dataFlux[(y * XCELLS + x) * 4 + 3] + dataFlux[(y      * XCELLS + rightX) * 4 + 2];
+
+		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt * dtMultiplier;
+	}
+
+	setCell(pos, toCellData(thisCell, thisCellData.wall));
+}
+	)"));
+
+	// this shader takes the old state and computes the new state using four sets of fluxes per the Runge-Kutta 4 method
+	shader3 = std::move(ComputeShader(R"(
+#version 430
+
+layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+
+layout(std430, binding = 0) writeonly restrict buffer DataOutStruct {
+	float dataOut[];
+};
+
+layout(std430, binding = 1) readonly restrict buffer DataInStruct {
+	float dataIn[];
+};
+
+layout(std430, binding = 2) readonly restrict buffer DataFlux1Struct {
+	vec4 dataFlux1[];
+};
+
+layout(std430, binding = 3) readonly restrict buffer DataFlux2Struct {
+	vec4 dataFlux2[];
+};
+
+layout(std430, binding = 4) readonly restrict buffer DataFlux3Struct {
+	vec4 dataFlux3[];
+};
+
+layout(std430, binding = 5) readonly restrict buffer DataFlux4Struct {
+	vec4 dataFlux4[];
+};
+
+layout(std430, binding = 6) readonly restrict buffer ConfigStruct {
+	uint XCELLS;
+	uint YCELLS;
+	uint dataSize;
+	uint vxOffset;
+	uint vyOffset;
+	uint pvOffset;
+	uint hvOffset;
+	uint wallOffset;
+	float dt;
+	float velocityCap;
+};
+
+struct CellData {
+	float vx;
+	float vy;
+	float pv;
+	float hv;
+	bool wall;
+};
+
+CellData getCell(ivec2 pos) {
+	CellData data = CellData(0.0, 0.0, 0.0, 0.0, false);
+	int x = pos.x;
+	int y = pos.y;
+
+	if (x >= 0 && x < XCELLS && y >= 0 && y < YCELLS) {
+		data.vx = dataIn[(y * XCELLS + x) * dataSize + vxOffset];
+		data.vy = dataIn[(y * XCELLS + x) * dataSize + vyOffset];
+		data.pv = dataIn[(y * XCELLS + x) * dataSize + pvOffset];
+		data.hv = dataIn[(y * XCELLS + x) * dataSize + hvOffset];
+		data.wall = dataIn[(y * XCELLS + x) * dataSize + wallOffset] != 0.0;
+	}
+
+	data.pv = clamp(data.pv + 10.1, 0.1, 266.1);
+
+	float velocity = length(vec2(data.vx, data.vy)) / data.pv;
+
+	if (velocity > velocityCap) {
+		data.vx = data.vx / velocity * velocityCap;
+		data.vy = data.vy / velocity * velocityCap;
+	}
+
+	return data;
+}
+
+void setCell(ivec2 pos, CellData data) {
+	int x = pos.x;
+	int y = pos.y;
+
+	data.pv = clamp(data.pv, 0.1, 266.1);
+
+	float velocity = length(vec2(data.vx, data.vy)) / data.pv;
+
+	if (velocity > velocityCap) {
+		data.vx = data.vx / velocity * velocityCap;
+		data.vy = data.vy / velocity * velocityCap;
+	}
+
+	data.pv -= 10.1;
+
+	if (isnan(data.vx) || isnan(data.vy) || isnan(data.pv) || isnan(data.hv)) {
+		data.vx = 0.0;
+		data.vy = 0.0;
+		data.pv = 0.0;
+		data.hv = 0.0;
+	}
+
+	data.hv = 1.0;
+
+	dataOut[(y * XCELLS + x) * dataSize + vxOffset] = data.vx;
+	dataOut[(y * XCELLS + x) * dataSize + vyOffset] = data.vy;
+	dataOut[(y * XCELLS + x) * dataSize + pvOffset] = data.pv;
+	dataOut[(y * XCELLS + x) * dataSize + hvOffset] = data.hv;
+	dataOut[(y * XCELLS + x) * dataSize + wallOffset] = data.wall ? 1.0 : 0.0;
+}
+
+vec4 toVec4(CellData data) {
+	return vec4(data.vx, data.vy, data.pv, data.hv);
+}
+
+CellData toCellData(vec4 data, bool wall) {
+	return CellData(data.x, data.y, data.z, data.w, wall);
+}
+
+void main() {
+	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+	int x = pos.x;
+	int y = pos.y;
+
+	if (x >= XCELLS || y >= YCELLS) {
+		return;
+	}
+
+	CellData thisCellData = getCell(pos);
+	vec4 thisCell = toVec4(thisCellData);
+
+	if (!thisCellData.wall) {
+		int upperY = y - 1;
+		int lowerY = y + 1;
+		int leftX  = x - 1;
+		int rightX = x + 1;
+
+		if (upperY < 0) {
+			upperY = 0;
+		}
+
+		if (lowerY >= YCELLS) {
+			lowerY = int(YCELLS) - 1;
+		}
+
+		if (leftX < 0) {
+			leftX = 0;
+		}
+
+		if (rightX >= XCELLS) {
+			rightX = int(XCELLS) - 1;
+		}
+
+		// Runge-Kutta 4
+
+		vec4 upperFlux = (dataFlux1[(y * XCELLS + x) * 4 + 0] + dataFlux1[(upperY * XCELLS + x     ) * 4 + 1]) * (1.0 / 6.0);
+		vec4 lowerFlux = (dataFlux1[(y * XCELLS + x) * 4 + 1] + dataFlux1[(lowerY * XCELLS + x     ) * 4 + 0]) * (1.0 / 6.0);
+		vec4 leftFlux  = (dataFlux1[(y * XCELLS + x) * 4 + 2] + dataFlux1[(y      * XCELLS + leftX ) * 4 + 3]) * (1.0 / 6.0);
+		vec4 rightFlux = (dataFlux1[(y * XCELLS + x) * 4 + 3] + dataFlux1[(y      * XCELLS + rightX) * 4 + 2]) * (1.0 / 6.0);
+
+		upperFlux += (dataFlux2[(y * XCELLS + x) * 4 + 0] + dataFlux2[(upperY * XCELLS + x     ) * 4 + 1]) * (1.0 / 3.0);
+		lowerFlux += (dataFlux2[(y * XCELLS + x) * 4 + 1] + dataFlux2[(lowerY * XCELLS + x     ) * 4 + 0]) * (1.0 / 3.0);
+		leftFlux  += (dataFlux2[(y * XCELLS + x) * 4 + 2] + dataFlux2[(y      * XCELLS + leftX ) * 4 + 3]) * (1.0 / 3.0);
+		rightFlux += (dataFlux2[(y * XCELLS + x) * 4 + 3] + dataFlux2[(y      * XCELLS + rightX) * 4 + 2]) * (1.0 / 3.0);
+
+		upperFlux += (dataFlux3[(y * XCELLS + x) * 4 + 0] + dataFlux3[(upperY * XCELLS + x     ) * 4 + 1]) * (1.0 / 3.0);
+		lowerFlux += (dataFlux3[(y * XCELLS + x) * 4 + 1] + dataFlux3[(lowerY * XCELLS + x     ) * 4 + 0]) * (1.0 / 3.0);
+		leftFlux  += (dataFlux3[(y * XCELLS + x) * 4 + 2] + dataFlux3[(y      * XCELLS + leftX ) * 4 + 3]) * (1.0 / 3.0);
+		rightFlux += (dataFlux3[(y * XCELLS + x) * 4 + 3] + dataFlux3[(y      * XCELLS + rightX) * 4 + 2]) * (1.0 / 3.0);
+
+		upperFlux += (dataFlux4[(y * XCELLS + x) * 4 + 0] + dataFlux4[(upperY * XCELLS + x     ) * 4 + 1]) * (1.0 / 6.0);
+		lowerFlux += (dataFlux4[(y * XCELLS + x) * 4 + 1] + dataFlux4[(lowerY * XCELLS + x     ) * 4 + 0]) * (1.0 / 6.0);
+		leftFlux  += (dataFlux4[(y * XCELLS + x) * 4 + 2] + dataFlux4[(y      * XCELLS + leftX ) * 4 + 3]) * (1.0 / 6.0);
+		rightFlux += (dataFlux4[(y * XCELLS + x) * 4 + 3] + dataFlux4[(y      * XCELLS + rightX) * 4 + 2]) * (1.0 / 6.0);
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt;
 	}
@@ -376,8 +559,20 @@ void main() {
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_in);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, CELL_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
 
-	glGenBuffers(1, &ssbo_flux);
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_flux);
+	glGenBuffers(1, &ssbo_flux1);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_flux1);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, FLUX_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
+
+	glGenBuffers(1, &ssbo_flux2);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_flux2);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, FLUX_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
+
+	glGenBuffers(1, &ssbo_flux3);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_flux3);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, FLUX_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
+
+	glGenBuffers(1, &ssbo_flux4);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_flux4);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, FLUX_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
 
 	glGenBuffers(1, &ssbo_out);
@@ -398,6 +593,10 @@ void main() {
 
 AirShader::~AirShader() {
 	glDeleteBuffers(1, &ssbo_in);
+	glDeleteBuffers(1, &ssbo_flux1);
+	glDeleteBuffers(1, &ssbo_flux2);
+	glDeleteBuffers(1, &ssbo_flux3);
+	glDeleteBuffers(1, &ssbo_flux4);
 	glDeleteBuffers(1, &ssbo_out);
 	glDeleteBuffers(1, &ssbo_config);
 }
@@ -419,11 +618,13 @@ void AirShader::upload(Air * air) {
 
 void AirShader::run(int repetitions) {
 	for (int i = 0; i < repetitions; i++) {
+		// Runge-Kutta 4
+
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_flux); // Index, id
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // Index, id
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_config); // Index, id
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_flux1); // output
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_config);
 
 		shader1.enable();
 		shader1.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
@@ -431,14 +632,84 @@ void AirShader::run(int repetitions) {
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // Index, id
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // Index, id
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_flux); // Index, id
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo_config); // Index, id
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // output
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_flux1); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo_config);
+
+		shader2.enable();
+		glUniform1f(1, 0.5);
+		shader2.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader2.disable();
+
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_flux2); // output
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_out); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_config);
+
+		shader1.enable();
+		shader1.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader1.disable();
+
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // output
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_flux2); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo_config);
 
 		shader2.enable();
 		shader2.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 		shader2.disable();
+
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_flux3); // output
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_out); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_config);
+
+		shader1.enable();
+		shader1.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader1.disable();
+
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // output
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_flux3); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo_config);
+
+		shader2.enable();
+		glUniform1f(1, 1.0);
+		shader2.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader2.disable();
+
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_flux4); // output
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_out); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_config);
+
+		shader1.enable();
+		shader1.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader1.disable();
+
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
+
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // output
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_flux1); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo_flux2); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssbo_flux3); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssbo_flux4); // input
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssbo_config);
+
+		shader3.enable();
+		shader3.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader3.disable();
+
+		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 
 		auto temp = ssbo_out;
 		ssbo_out = ssbo_in;

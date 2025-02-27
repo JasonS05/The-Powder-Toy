@@ -85,7 +85,7 @@ void Air::update_air(void)
 
 		air_shader.init(); // does nothing after the first invocation
 		air_shader.upload(this);
-		air_shader.run(80);
+		air_shader.run(8);
 		air_shader.download(this);
 	}
 }

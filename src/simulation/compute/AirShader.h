@@ -29,6 +29,8 @@ struct ConfigStruct {
 	unsigned int pvOffset = offsetof(CellData, pv) / sizeof(float);
 	unsigned int hvOffset = offsetof(CellData, hv) / sizeof(float);
 	unsigned int wallOffset = offsetof(CellData, wall) / sizeof(float);
+	float dt = 0.1;
+	float velocityCap = (0.5 / dt - 1.0) / sqrt(2.0);
 };
 
 inline constexpr std::size_t CELL_BUFFER_SIZE = XCELLS * YCELLS * sizeof(CellData);
@@ -50,10 +52,9 @@ public:
 
 private:
     bool initialized = false;
-    ComputeShader shader1;
-	ComputeShader shader2;
+    ComputeShader shader1, shader2, shader3;
     ConfigStruct config;
-    unsigned int ssbo_out, ssbo_flux, ssbo_in, ssbo_config;
+    unsigned int ssbo_out, ssbo_flux1, ssbo_flux2, ssbo_flux3, ssbo_flux4, ssbo_in, ssbo_config;
     CellData tmp_buf[XCELLS * YCELLS];
 };
 
