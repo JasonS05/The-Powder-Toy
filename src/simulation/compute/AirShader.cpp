@@ -5,8 +5,10 @@
 #include "../../SimulationConfig.h"
 #include "../Air.h"
 
-#include <GL/glew.h>
+#include "Funcs.h"
 #include <iostream>
+
+using namespace Voxren::Gl;
 
 AirShader::AirShader() {}
 

@@ -8,7 +8,9 @@
 #include "common/clipboard/Clipboard.h"
 #include "FrameSchedule.h"
 #include <iostream>
-#include <GL/glew.h>
+#include "simulation/compute/Funcs.h"
+
+using namespace Voxren::Gl;
 
 int desktopWidth = 1280;
 int desktopHeight = 1024;
@@ -281,14 +283,8 @@ void SDLSetScreen()
 			}
 			Platform::Exit(-1);
 		}
-		glewExperimental = GL_TRUE;
-		auto err = glewInit();
-		if (GLEW_OK != err)
-		{
-			fprintf(stderr, "glewInit failed: %s\n", glewGetErrorString(err));
-			Platform::Exit(-1);
-		}
-		fprintf(stderr, "glewInit seems to have succeeded; glDispatchComputeIndirect: %p\n", glDispatchComputeIndirect);
+		LoadGlFuncs();
+		fprintf(stderr, "LoadGlFuncs has probably succeeded; glDispatchComputeIndirect: %p\n", glDispatchComputeIndirect);
 		assert(glDispatchComputeIndirect);
 		SDL_RenderSetLogicalSize(sdl_renderer, WINDOWW, WINDOWH);
 		sdl_texture = SDL_CreateTexture(sdl_renderer, SDL_PIXELFORMAT_ARGB8888, SDL_TEXTUREACCESS_STREAMING, WINDOWW, WINDOWH);
