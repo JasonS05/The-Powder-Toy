@@ -603,14 +603,14 @@ AirShader::~AirShader() {
 	glDeleteBuffers(1, &ssbo_config);
 }
 
-void AirShader::upload(Air * air) {
+void AirShader::upload(Simulation &sim) {
 	for (int y = 0; y < YCELLS; y++) {
 		for (int x = 0; x < XCELLS; x++) {
-			tmp_buf[y * XCELLS + x].vx =  (air->vx)[y][x];
-			tmp_buf[y * XCELLS + x].vy = -(air->vy)[y][x];
-			tmp_buf[y * XCELLS + x].pv =  (air->pv)[y][x];
-			tmp_buf[y * XCELLS + x].hv =  (air->hv)[y][x];
-			tmp_buf[y * XCELLS + x].wall = (air->bmap_blockair)[y][x];
+			tmp_buf[y * XCELLS + x].vx =  sim.vx[y][x];
+			tmp_buf[y * XCELLS + x].vy = -sim.vy[y][x];
+			tmp_buf[y * XCELLS + x].pv =  sim.pv[y][x];
+			tmp_buf[y * XCELLS + x].hv =  sim.hv[y][x];
+			tmp_buf[y * XCELLS + x].wall = sim.bmap[y][x];
 		}
 	}
 
@@ -719,7 +719,7 @@ void AirShader::run(int repetitions) {
 	}
 }
 
-void AirShader::download(Air * air) {
+void AirShader::download(Simulation &sim) {
     glMemoryBarrier(GL_ALL_BARRIER_BITS);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_in);
 
@@ -728,10 +728,10 @@ void AirShader::download(Air * air) {
 
 	for (int y = 0; y < YCELLS; y++) {
 		for (int x = 0; x < XCELLS; x++) {
-			(air->vx)[y][x] =  tmp_buf[y * XCELLS + x].vx;
-			(air->vy)[y][x] = -tmp_buf[y * XCELLS + x].vy;
-			(air->pv)[y][x] =  tmp_buf[y * XCELLS + x].pv;
-			(air->hv)[y][x] =  tmp_buf[y * XCELLS + x].hv;
+			sim.vx[y][x] =  tmp_buf[y * XCELLS + x].vx;
+			sim.vy[y][x] = -tmp_buf[y * XCELLS + x].vy;
+			sim.pv[y][x] =  tmp_buf[y * XCELLS + x].pv;
+			sim.hv[y][x] =  tmp_buf[y * XCELLS + x].hv;
 		}
 	}
 }
