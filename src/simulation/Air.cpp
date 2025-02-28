@@ -13,7 +13,6 @@ void Air::Clear()
 	std::fill(&sim.pv[0][0], &sim.pv[0][0]+NCELL, 0.0f);
 	std::fill(&sim.vy[0][0], &sim.vy[0][0]+NCELL, 0.0f);
 	std::fill(&sim.vx[0][0], &sim.vx[0][0]+NCELL, 0.0f);
-	std::fill(&sim.ec[0][0], &sim.ec[0][0]+NCELL, false); // this line may be broken due to rebase, can't be bothered to fix since it's not relevant because of later commits
 }
 
 void Air::ClearAirH()
@@ -37,6 +36,9 @@ float pclamp(float pressure)
 
 void Air::update_air(void) 
 {
+	auto &vx = sim.vx;
+	auto &vy = sim.vy;
+	auto &pv = sim.pv;
 	if (airMode != AIR_NOUPDATE) //airMode 4 is no air/pressure update
 	{
 		for (auto i=0; i<YCELLS; i++) //reduces pressure/velocity on the edges every frame
@@ -86,9 +88,9 @@ void Air::update_air(void)
 		}
 
 		air_shader.init(); // does nothing after the first invocation
-		air_shader.upload(this);
+		air_shader.upload(sim);
 		air_shader.run(8);
-		air_shader.download(this);
+		air_shader.download(sim);
 	}
 }
 

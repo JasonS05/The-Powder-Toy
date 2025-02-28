@@ -1,6 +1,7 @@
 #ifndef AIR_SHADER_H
 #define AIR_SHADER_H
 
+#include "../Simulation.h"
 #include "ComputeShader.h"
 #include "../../SimulationConfig.h"
 #include <cstddef>
@@ -46,9 +47,9 @@ public:
     AirShader &operator=(const AirShader &other) = delete;
 
     void init();
-    void upload(Air * air);
+    void upload(Simulation &sim);
 	void run(int repetitions);
-    void download(Air * air);
+    void download(Simulation &sim);
 
 private:
     bool initialized = false;
