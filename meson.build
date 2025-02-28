@@ -430,6 +430,15 @@ else
 endif
 
 project_deps = []
+if host_platform == 'windows'
+	project_deps += [
+		cpp_compiler.find_library('opengl32'),
+	]
+else
+	project_deps += [
+		cpp_compiler.find_library('GL'),
+	]
+endif
 data_files = []
 powder_deps = []
 

@@ -15,6 +15,7 @@ using namespace Voxren::Gl;
 int desktopWidth = 1280;
 int desktopHeight = 1024;
 SDL_Window *sdl_window = nullptr;
+SDL_GLContext sdl_glcontext = nullptr;
 SDL_Renderer *sdl_renderer = nullptr;
 SDL_Texture *sdl_texture = nullptr;
 bool vsyncHint = false;
@@ -225,6 +226,12 @@ void SDLSetScreen()
 			SDL_DestroyTexture(sdl_texture);
 			sdl_texture = nullptr;
 		}
+		if (sdl_glcontext)
+		{
+			SDL_GL_MakeCurrent(sdl_window, nullptr);
+			SDL_GL_DeleteContext(sdl_glcontext);
+			sdl_glcontext = nullptr;
+		}
 		if (sdl_renderer)
 		{
 			SDL_DestroyRenderer(sdl_renderer);
@@ -251,8 +258,8 @@ void SDLSetScreen()
 		{
 			rendererFlags |= SDL_RENDERER_PRESENTVSYNC;
 		}
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS        , 0);
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK , SDL_GL_CONTEXT_PROFILE_CORE);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS        , SDL_GL_CONTEXT_FORWARD_COMPATIBLE_FLAG);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK , SDL_GL_CONTEXT_PROFILE_COMPATIBILITY);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
 		SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER         , 1);
@@ -271,9 +278,22 @@ void SDLSetScreen()
 		SDL_SetHint(SDL_HINT_MOUSE_FOCUS_CLICKTHROUGH, "1");
 		SDL_SetHint(SDL_HINT_RENDER_SCALE_QUALITY, newFrameOpsNorm.blurryScaling ? "linear" : "nearest");
 		sdl_renderer = SDL_CreateRenderer(sdl_window, -1, rendererFlags);
-		if (!sdl_renderer)
+		sdl_glcontext = SDL_GL_CreateContext(sdl_window);
+		if (sdl_glcontext)
 		{
-			fprintf(stderr, "SDL_CreateRenderer failed; available renderers:\n");
+			SDL_GL_MakeCurrent(sdl_window, sdl_glcontext);
+		}
+		if (!sdl_renderer || !sdl_glcontext)
+		{
+			if (!sdl_renderer)
+			{
+				fprintf(stderr, "SDL_CreateRenderer failed\n");
+			}
+			else if (!sdl_glcontext)
+			{
+				fprintf(stderr, "SDL_GL_CreateContext failed\n");
+			}
+			fprintf(stderr, "available renderers:\n");
 			int num = SDL_GetNumRenderDrivers();
 			for (int i = 0; i < num; ++i)
 			{
@@ -281,8 +301,11 @@ void SDLSetScreen()
 				SDL_GetRenderDriverInfo(i, &info);
 				fprintf(stderr, " - %s\n", info.name);
 			}
+			fprintf(stderr, "(end list)\n");
 			Platform::Exit(-1);
 		}
+		fprintf(stderr, "GL context: %p\n", SDL_GL_GetCurrentContext());
+		fprintf(stderr, "GL version: %s\n", glGetString(GL_VERSION));
 		LoadGlFuncs();
 		fprintf(stderr, "LoadGlFuncs has probably succeeded; glDispatchComputeIndirect: %p\n", glDispatchComputeIndirect);
 		assert(glDispatchComputeIndirect);

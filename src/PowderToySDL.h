@@ -11,6 +11,7 @@
 extern int desktopWidth;
 extern int desktopHeight;
 extern SDL_Window *sdl_window;
+extern SDL_GLContext sdl_glcontext;
 extern SDL_Renderer *sdl_renderer;
 extern SDL_Texture *sdl_texture;
 extern bool momentumScroll;
