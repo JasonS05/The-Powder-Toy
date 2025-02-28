@@ -47,7 +47,7 @@ public:
     AirShader &operator=(const AirShader &other) = delete;
 
     void init();
-    void upload(Simulation &sim);
+    void upload(Simulation &sim, Air *air);
 	void run(int repetitions);
     void download(Simulation &sim);
 

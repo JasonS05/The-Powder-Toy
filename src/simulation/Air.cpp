@@ -39,39 +39,11 @@ void Air::update_air(void)
 	auto &vx = sim.vx;
 	auto &vy = sim.vy;
 	auto &pv = sim.pv;
+	auto &fvx = sim.fvx;
+	auto &fvy = sim.fvy;
+	auto &bmap = sim.bmap;
 	if (airMode != AIR_NOUPDATE) //airMode 4 is no air/pressure update
 	{
-		for (auto i=0; i<YCELLS; i++) //reduces pressure/velocity on the edges every frame
-		{
-			pv[i][0] = pv[i][0]*0.8f;
-			pv[i][1] = pv[i][1]*0.8f;
-			pv[i][XCELLS-2] = pv[i][XCELLS-2]*0.8f;
-			pv[i][XCELLS-1] = pv[i][XCELLS-1]*0.8f;
-			vx[i][0] = vx[i][0]*0.9f;
-			vx[i][1] = vx[i][1]*0.9f;
-			vx[i][XCELLS-2] = vx[i][XCELLS-2]*0.9f;
-			vx[i][XCELLS-1] = vx[i][XCELLS-1]*0.9f;
-			vy[i][0] = vy[i][0]*0.9f;
-			vy[i][1] = vy[i][1]*0.9f;
-			vy[i][XCELLS-2] = vy[i][XCELLS-2]*0.9f;
-			vy[i][XCELLS-1] = vy[i][XCELLS-1]*0.9f;
-		}
-		for (auto i=0; i<XCELLS; i++) //reduces pressure/velocity on the edges every frame
-		{
-			pv[0][i] = pv[0][i]*0.8f;
-			pv[1][i] = pv[1][i]*0.8f;
-			pv[YCELLS-2][i] = pv[YCELLS-2][i]*0.8f;
-			pv[YCELLS-1][i] = pv[YCELLS-1][i]*0.8f;
-			vx[0][i] = vx[0][i]*0.9f;
-			vx[1][i] = vx[1][i]*0.9f;
-			vx[YCELLS-2][i] = vx[YCELLS-2][i]*0.9f;
-			vx[YCELLS-1][i] = vx[YCELLS-1][i]*0.9f;
-			vy[0][i] = vy[0][i]*0.9f;
-			vy[1][i] = vy[1][i]*0.9f;
-			vy[YCELLS-2][i] = vy[YCELLS-2][i]*0.9f;
-			vy[YCELLS-1][i] = vy[YCELLS-1][i]*0.9f;
-		}
-
 		for (auto j=1; j<YCELLS-1; j++) // clear pressures and velocities inside walls and limit pressures
 		{
 			for (auto i=1; i<XCELLS-1; i++)
@@ -87,8 +59,20 @@ void Air::update_air(void)
 			}
 		}
 
+		for (auto y = 0; y < YCELLS; y++) // update velocity
+		{
+			for (auto x = 0; x < XCELLS; x++)
+			{
+				if (bmap[y][x] == WL_FAN)
+				{
+					vx[y][x] += fvx[y][x];
+					vy[y][x] += fvy[y][x];
+				}
+			}
+		}
+
 		air_shader.init(); // does nothing after the first invocation
-		air_shader.upload(sim);
+		air_shader.upload(sim, this);
 		air_shader.run(8);
 		air_shader.download(sim);
 	}

@@ -51,17 +51,18 @@ struct CellData {
 	bool wall;
 };
 
-CellData getCell(ivec2 pos) {
-	CellData data = CellData(0.0, 0.0, 0.0, 0.0, false);
+CellData getCell(ivec2 pos, CellData data) {
 	int x = pos.x;
 	int y = pos.y;
 
-	if (x >= 0 && x < XCELLS && y >= 0 && y < YCELLS) {
+	if (x >= 1 && x < XCELLS - 1 && y >= 1 && y < YCELLS - 1) {
 		data.vx = dataIn[(y * XCELLS + x) * dataSize + vxOffset];
 		data.vy = dataIn[(y * XCELLS + x) * dataSize + vyOffset];
 		data.pv = dataIn[(y * XCELLS + x) * dataSize + pvOffset];
 		data.hv = dataIn[(y * XCELLS + x) * dataSize + hvOffset];
 		data.wall = dataIn[(y * XCELLS + x) * dataSize + wallOffset] != 0.0;
+	} else {
+		return data;
 	}
 
 	data.pv = clamp(data.pv + 10.1, 0.1, 266.1);
@@ -160,59 +161,73 @@ void main() {
 	vec4 leftFlux  = vec4(0);
 	vec4 rightFlux = vec4(0);
 
-	CellData thisCellData = getCell(pos);
+	CellData thisCellData = getCell(pos, toCellData(vec4(0), false));
 
 	if (!thisCellData.wall) {
 		vec4 thisCell = toVec4(thisCellData);
 
-		CellData upperCellData = getCell(pos + ivec2( 0, -1));
-		CellData lowerCellData = getCell(pos + ivec2( 0,  1));
-		CellData leftCellData  = getCell(pos + ivec2(-1,  0));
-		CellData rightCellData = getCell(pos + ivec2( 1,  0));
+		CellData upperCellData = CellData(0, 0, 0, 0, false);
+		CellData lowerCellData = CellData(0, 0, 0, 0, false);
+		CellData leftCellData  = CellData(0, 0, 0, 0, false);
+		CellData rightCellData = CellData(0, 0, 0, 0, false);
 
-		vec4 upperCell = upperCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(upperCellData);
-		vec4 lowerCell = lowerCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(lowerCellData);
-		vec4 leftCell  = leftCellData.wall  ? thisCell * vec4(-1, 1, 1, 1) : toVec4(leftCellData);
-		vec4 rightCell = rightCellData.wall ? thisCell * vec4(-1, 1, 1, 1) : toVec4(rightCellData);
+		vec4 upperEdge;
+		vec4 lowerEdge;
+		vec4 leftEdge;
+		vec4 rightEdge;
 
-		vec4 logUpperCell = vec4(upperCell.xy, log(upperCell.zw));
-		vec4 logLowerCell = vec4(lowerCell.xy, log(lowerCell.zw));
-		vec4 logLeftCell  = vec4(leftCell .xy, log(leftCell .zw));
-		vec4 logRightCell = vec4(rightCell.xy, log(rightCell.zw));
-		vec4 logThisCell  = vec4(thisCell .xy, log(thisCell .zw));
+		if (x != 0 && x != XCELLS - 1 && y != 0 && y != YCELLS - 1) {
+			upperCellData = getCell(pos + ivec2( 0, -1), thisCellData);
+			lowerCellData = getCell(pos + ivec2( 0,  1), thisCellData);
+			leftCellData  = getCell(pos + ivec2(-1,  0), thisCellData);
+			rightCellData = getCell(pos + ivec2( 1,  0), thisCellData);
 
-		vec4 logUpperEdge = logThisCell + (logUpperCell - logLowerCell) * 0.25;
-		vec4 logLowerEdge = logThisCell + (logLowerCell - logUpperCell) * 0.25;
-		vec4 logLeftEdge  = logThisCell + (logLeftCell  - logRightCell) * 0.25;
-		vec4 logRightEdge = logThisCell + (logRightCell - logLeftCell ) * 0.25;
+			vec4 upperCell = upperCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(upperCellData);
+			vec4 lowerCell = lowerCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(lowerCellData);
+			vec4 leftCell  = leftCellData.wall  ? thisCell * vec4(-1, 1, 1, 1) : toVec4(leftCellData);
+			vec4 rightCell = rightCellData.wall ? thisCell * vec4(-1, 1, 1, 1) : toVec4(rightCellData);
 
-		vec4 upperEdge = vec4(logUpperEdge.xy, exp(logUpperEdge.zw));
-		vec4 lowerEdge = vec4(logLowerEdge.xy, exp(logLowerEdge.zw));
-		vec4 leftEdge  = vec4(logLeftEdge .xy, exp(logLeftEdge .zw));
-		vec4 rightEdge = vec4(logRightEdge.xy, exp(logRightEdge.zw));
+			vec4 logUpperCell = vec4(upperCell.xy, log(upperCell.zw));
+			vec4 logLowerCell = vec4(lowerCell.xy, log(lowerCell.zw));
+			vec4 logLeftCell  = vec4(leftCell .xy, log(leftCell .zw));
+			vec4 logRightCell = vec4(rightCell.xy, log(rightCell.zw));
+			vec4 logThisCell  = vec4(thisCell .xy, log(thisCell .zw));
 
-		if (!upperCellData.wall) {
-			upperFlux = getFlux(upperEdge.yxzw).yxzw;
+			vec4 logUpperEdge = logThisCell + (logUpperCell - logLowerCell) * 0.25;
+			vec4 logLowerEdge = logThisCell + (logLowerCell - logUpperCell) * 0.25;
+			vec4 logLeftEdge  = logThisCell + (logLeftCell  - logRightCell) * 0.25;
+			vec4 logRightEdge = logThisCell + (logRightCell - logLeftCell ) * 0.25;
+
+			upperEdge = vec4(logUpperEdge.xy, exp(logUpperEdge.zw));
+			lowerEdge = vec4(logLowerEdge.xy, exp(logLowerEdge.zw));
+			leftEdge  = vec4(logLeftEdge .xy, exp(logLeftEdge .zw));
+			rightEdge = vec4(logRightEdge.xy, exp(logRightEdge.zw));
 		} else {
-			upperFlux = vec4(0, thisCell.z, 0, 0);
+			upperEdge = vec4(0, 0, 10.1, 0);
+			lowerEdge = vec4(0, 0, 10.1, 0);
+			leftEdge  = vec4(0, 0, 10.1, 0);
+			rightEdge = vec4(0, 0, 10.1, 0);
 		}
 
-		if (!lowerCellData.wall) {
-			lowerFlux = getFlux(lowerEdge.yxzw * vec4(-1, 1, 1, 1)).yxzw * vec4(-1, 1, -1, -1);
-		} else {
-			lowerFlux = vec4(0, thisCell.z, 0, 0);
+		upperFlux = getFlux(upperEdge.yxzw).yxzw;
+		lowerFlux = getFlux(lowerEdge.yxzw * vec4(-1, 1, 1, 1)).yxzw * vec4(-1, 1, -1, -1);
+		leftFlux  = getFlux(leftEdge * vec4(-1, 1, 1, 1)) * vec4(1, -1, -1, -1);
+		rightFlux = getFlux(rightEdge);
+
+		if (upperCellData.wall) {
+			upperFlux *= vec4(0.0, 2.0, 0.0, 0.0);
 		}
 
-		if (!leftCellData.wall) {
-			leftFlux = getFlux(leftEdge * vec4(-1, 1, 1, 1)) * vec4(1, -1, -1, -1);
-		} else {
-			leftFlux = vec4(thisCell.z, 0, 0, 0);
+		if (lowerCellData.wall) {
+			lowerFlux *= vec4(0.0, 2.0, 0.0, 0.0);
 		}
 
-		if (!rightCellData.wall) {
-			rightFlux = getFlux(rightEdge);
-		} else {
-			rightFlux = vec4(thisCell.z, 0, 0, 0);
+		if (leftCellData.wall) {
+			leftFlux *= vec4(2.0, 0.0, 0.0, 0.0);
+		}
+
+		if (rightCellData.wall) {
+			rightFlux *= vec4(2.0, 0.0, 0.0, 0.0);
 		}
 	} else {
 		upperFlux = vec4(0);
@@ -274,7 +289,7 @@ CellData getCell(ivec2 pos) {
 	int x = pos.x;
 	int y = pos.y;
 
-	if (x >= 0 && x < XCELLS && y >= 0 && y < YCELLS) {
+	if (x >= 1 && x < XCELLS - 1 && y >= 1 && y < YCELLS - 1) {
 		data.vx = dataIn[(y * XCELLS + x) * dataSize + vxOffset];
 		data.vy = dataIn[(y * XCELLS + x) * dataSize + vyOffset];
 		data.pv = dataIn[(y * XCELLS + x) * dataSize + pvOffset];
@@ -345,27 +360,11 @@ void main() {
 	CellData thisCellData = getCell(pos);
 	vec4 thisCell = toVec4(thisCellData);
 
-	if (!thisCellData.wall) {
+	if (!thisCellData.wall && x != 0 && x != XCELLS - 1 && y != 0 && y != YCELLS - 1) {
 		int upperY = y - 1;
 		int lowerY = y + 1;
 		int leftX  = x - 1;
 		int rightX = x + 1;
-
-		if (upperY < 0) {
-			upperY = 0;
-		}
-
-		if (lowerY >= YCELLS) {
-			lowerY = int(YCELLS) - 1;
-		}
-
-		if (leftX < 0) {
-			leftX = 0;
-		}
-
-		if (rightX >= XCELLS) {
-			rightX = int(XCELLS) - 1;
-		}
 
 		vec4 upperFlux = dataFlux[(y * XCELLS + x) * 4 + 0] + dataFlux[(upperY * XCELLS + x     ) * 4 + 1];
 		vec4 lowerFlux = dataFlux[(y * XCELLS + x) * 4 + 1] + dataFlux[(lowerY * XCELLS + x     ) * 4 + 0];
@@ -373,6 +372,10 @@ void main() {
 		vec4 rightFlux = dataFlux[(y * XCELLS + x) * 4 + 3] + dataFlux[(y      * XCELLS + rightX) * 4 + 2];
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt * dtMultiplier;
+	}
+
+	if (x == 0 || x == XCELLS - 1 || y == 0 || y == YCELLS - 1) {
+		thisCell = vec4(0, 0, 10.1, 0);
 	}
 
 	setCell(pos, toCellData(thisCell, thisCellData.wall));
@@ -435,7 +438,7 @@ CellData getCell(ivec2 pos) {
 	int x = pos.x;
 	int y = pos.y;
 
-	if (x >= 0 && x < XCELLS && y >= 0 && y < YCELLS) {
+	if (x >= 1 && x < XCELLS - 1 && y >= 1 && y < YCELLS - 1) {
 		data.vx = dataIn[(y * XCELLS + x) * dataSize + vxOffset];
 		data.vy = dataIn[(y * XCELLS + x) * dataSize + vyOffset];
 		data.pv = dataIn[(y * XCELLS + x) * dataSize + pvOffset];
@@ -494,6 +497,9 @@ CellData toCellData(vec4 data, bool wall) {
 	return CellData(data.x, data.y, data.z, data.w, wall);
 }
 
+float third = 1.0 / 3.0;
+float sixth = 1.0 / 6.0;
+
 void main() {
 	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
 	int x = pos.x;
@@ -506,51 +512,39 @@ void main() {
 	CellData thisCellData = getCell(pos);
 	vec4 thisCell = toVec4(thisCellData);
 
-	if (!thisCellData.wall) {
+	if (!thisCellData.wall && x != 0 && x != XCELLS - 1 && y != 0 && y != YCELLS - 1) {
 		int upperY = y - 1;
 		int lowerY = y + 1;
 		int leftX  = x - 1;
 		int rightX = x + 1;
 
-		if (upperY < 0) {
-			upperY = 0;
-		}
-
-		if (lowerY >= YCELLS) {
-			lowerY = int(YCELLS) - 1;
-		}
-
-		if (leftX < 0) {
-			leftX = 0;
-		}
-
-		if (rightX >= XCELLS) {
-			rightX = int(XCELLS) - 1;
-		}
-
 		// Runge-Kutta 4
 
-		vec4 upperFlux = (dataFlux1[(y * XCELLS + x) * 4 + 0] + dataFlux1[(upperY * XCELLS + x     ) * 4 + 1]) * (1.0 / 6.0);
-		vec4 lowerFlux = (dataFlux1[(y * XCELLS + x) * 4 + 1] + dataFlux1[(lowerY * XCELLS + x     ) * 4 + 0]) * (1.0 / 6.0);
-		vec4 leftFlux  = (dataFlux1[(y * XCELLS + x) * 4 + 2] + dataFlux1[(y      * XCELLS + leftX ) * 4 + 3]) * (1.0 / 6.0);
-		vec4 rightFlux = (dataFlux1[(y * XCELLS + x) * 4 + 3] + dataFlux1[(y      * XCELLS + rightX) * 4 + 2]) * (1.0 / 6.0);
+		vec4 upperFlux = (dataFlux1[(y * XCELLS + x) * 4 + 0] + dataFlux1[(upperY * XCELLS + x     ) * 4 + 1]) * sixth;
+		vec4 lowerFlux = (dataFlux1[(y * XCELLS + x) * 4 + 1] + dataFlux1[(lowerY * XCELLS + x     ) * 4 + 0]) * sixth;
+		vec4 leftFlux  = (dataFlux1[(y * XCELLS + x) * 4 + 2] + dataFlux1[(y      * XCELLS + leftX ) * 4 + 3]) * sixth;
+		vec4 rightFlux = (dataFlux1[(y * XCELLS + x) * 4 + 3] + dataFlux1[(y      * XCELLS + rightX) * 4 + 2]) * sixth;
 
-		upperFlux += (dataFlux2[(y * XCELLS + x) * 4 + 0] + dataFlux2[(upperY * XCELLS + x     ) * 4 + 1]) * (1.0 / 3.0);
-		lowerFlux += (dataFlux2[(y * XCELLS + x) * 4 + 1] + dataFlux2[(lowerY * XCELLS + x     ) * 4 + 0]) * (1.0 / 3.0);
-		leftFlux  += (dataFlux2[(y * XCELLS + x) * 4 + 2] + dataFlux2[(y      * XCELLS + leftX ) * 4 + 3]) * (1.0 / 3.0);
-		rightFlux += (dataFlux2[(y * XCELLS + x) * 4 + 3] + dataFlux2[(y      * XCELLS + rightX) * 4 + 2]) * (1.0 / 3.0);
+		upperFlux += (dataFlux2[(y * XCELLS + x) * 4 + 0] + dataFlux2[(upperY * XCELLS + x     ) * 4 + 1]) * third;
+		lowerFlux += (dataFlux2[(y * XCELLS + x) * 4 + 1] + dataFlux2[(lowerY * XCELLS + x     ) * 4 + 0]) * third;
+		leftFlux  += (dataFlux2[(y * XCELLS + x) * 4 + 2] + dataFlux2[(y      * XCELLS + leftX ) * 4 + 3]) * third;
+		rightFlux += (dataFlux2[(y * XCELLS + x) * 4 + 3] + dataFlux2[(y      * XCELLS + rightX) * 4 + 2]) * third;
 
-		upperFlux += (dataFlux3[(y * XCELLS + x) * 4 + 0] + dataFlux3[(upperY * XCELLS + x     ) * 4 + 1]) * (1.0 / 3.0);
-		lowerFlux += (dataFlux3[(y * XCELLS + x) * 4 + 1] + dataFlux3[(lowerY * XCELLS + x     ) * 4 + 0]) * (1.0 / 3.0);
-		leftFlux  += (dataFlux3[(y * XCELLS + x) * 4 + 2] + dataFlux3[(y      * XCELLS + leftX ) * 4 + 3]) * (1.0 / 3.0);
-		rightFlux += (dataFlux3[(y * XCELLS + x) * 4 + 3] + dataFlux3[(y      * XCELLS + rightX) * 4 + 2]) * (1.0 / 3.0);
+		upperFlux += (dataFlux3[(y * XCELLS + x) * 4 + 0] + dataFlux3[(upperY * XCELLS + x     ) * 4 + 1]) * third;
+		lowerFlux += (dataFlux3[(y * XCELLS + x) * 4 + 1] + dataFlux3[(lowerY * XCELLS + x     ) * 4 + 0]) * third;
+		leftFlux  += (dataFlux3[(y * XCELLS + x) * 4 + 2] + dataFlux3[(y      * XCELLS + leftX ) * 4 + 3]) * third;
+		rightFlux += (dataFlux3[(y * XCELLS + x) * 4 + 3] + dataFlux3[(y      * XCELLS + rightX) * 4 + 2]) * third;
 
-		upperFlux += (dataFlux4[(y * XCELLS + x) * 4 + 0] + dataFlux4[(upperY * XCELLS + x     ) * 4 + 1]) * (1.0 / 6.0);
-		lowerFlux += (dataFlux4[(y * XCELLS + x) * 4 + 1] + dataFlux4[(lowerY * XCELLS + x     ) * 4 + 0]) * (1.0 / 6.0);
-		leftFlux  += (dataFlux4[(y * XCELLS + x) * 4 + 2] + dataFlux4[(y      * XCELLS + leftX ) * 4 + 3]) * (1.0 / 6.0);
-		rightFlux += (dataFlux4[(y * XCELLS + x) * 4 + 3] + dataFlux4[(y      * XCELLS + rightX) * 4 + 2]) * (1.0 / 6.0);
+		upperFlux += (dataFlux4[(y * XCELLS + x) * 4 + 0] + dataFlux4[(upperY * XCELLS + x     ) * 4 + 1]) * sixth;
+		lowerFlux += (dataFlux4[(y * XCELLS + x) * 4 + 1] + dataFlux4[(lowerY * XCELLS + x     ) * 4 + 0]) * sixth;
+		leftFlux  += (dataFlux4[(y * XCELLS + x) * 4 + 2] + dataFlux4[(y      * XCELLS + leftX ) * 4 + 3]) * sixth;
+		rightFlux += (dataFlux4[(y * XCELLS + x) * 4 + 3] + dataFlux4[(y      * XCELLS + rightX) * 4 + 2]) * sixth;
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt;
+	}
+
+	if (x == 0 || x == XCELLS - 1 || y == 0 || y == YCELLS - 1) {
+		thisCell = vec4(0, 0, 10.1, 0);
 	}
 
 	setCell(pos, toCellData(thisCell, thisCellData.wall));
@@ -603,14 +597,14 @@ AirShader::~AirShader() {
 	glDeleteBuffers(1, &ssbo_config);
 }
 
-void AirShader::upload(Simulation &sim) {
+void AirShader::upload(Simulation &sim, Air *air) {
 	for (int y = 0; y < YCELLS; y++) {
 		for (int x = 0; x < XCELLS; x++) {
 			tmp_buf[y * XCELLS + x].vx =  sim.vx[y][x];
 			tmp_buf[y * XCELLS + x].vy = -sim.vy[y][x];
 			tmp_buf[y * XCELLS + x].pv =  sim.pv[y][x];
 			tmp_buf[y * XCELLS + x].hv =  sim.hv[y][x];
-			tmp_buf[y * XCELLS + x].wall = sim.bmap[y][x];
+			tmp_buf[y * XCELLS + x].wall = air->bmap_blockair[y][x];
 		}
 	}
 
