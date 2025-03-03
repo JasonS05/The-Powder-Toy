@@ -13,6 +13,8 @@ void Air::Clear()
 	std::fill(&sim.pv[0][0], &sim.pv[0][0]+NCELL, 0.0f);
 	std::fill(&sim.vy[0][0], &sim.vy[0][0]+NCELL, 0.0f);
 	std::fill(&sim.vx[0][0], &sim.vx[0][0]+NCELL, 0.0f);
+
+	ClearAirH();
 }
 
 void Air::ClearAirH()
@@ -20,13 +22,10 @@ void Air::ClearAirH()
 	std::fill(&sim.hv[0][0], &sim.hv[0][0]+NCELL, ambientAirTemp);
 }
 
-// Used when updating temp or velocity from far away
-const float advDistanceMult = 0.7f;
-
 // ambient heat update
 void Air::update_airh(void)
 {
-	// TODO
+	// this function is no longer relevant, all is handled in compute/AirShader.cpp
 }
 
 float pclamp(float pressure)
@@ -73,7 +72,7 @@ void Air::update_air(void)
 
 		air_shader.init(); // does nothing after the first invocation
 		air_shader.upload(sim, this);
-		air_shader.run(8);
+		air_shader.run(16, this);
 		air_shader.download(sim);
 	}
 }

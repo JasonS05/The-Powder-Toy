@@ -30,8 +30,9 @@ struct ConfigStruct {
 	unsigned int pvOffset = offsetof(CellData, pv) / sizeof(float);
 	unsigned int hvOffset = offsetof(CellData, hv) / sizeof(float);
 	unsigned int wallOffset = offsetof(CellData, wall) / sizeof(float);
-	float dt = 0.1;
-	float velocityCap = (0.5 / dt - 1.0) / sqrt(2.0);
+	float dt = 0.05;
+	float velocityCap = 5.0; // 6 is too high, 5 seems stable
+	int degreesOfFreedom = 5; // determines the adiabatic index, in this case it's 1.4 which matches IRL air
 };
 
 inline constexpr std::size_t CELL_BUFFER_SIZE = XCELLS * YCELLS * sizeof(CellData);
@@ -48,12 +49,12 @@ public:
 
     void init();
     void upload(Simulation &sim, Air *air);
-	void run(int repetitions);
+	void run(int repetitions, Air *air);
     void download(Simulation &sim);
 
 private:
     bool initialized = false;
-    ComputeShader shader1, shader2, shader3;
+    ComputeShader shader;
     ConfigStruct config;
     unsigned int ssbo_out, ssbo_flux1, ssbo_flux2, ssbo_flux3, ssbo_flux4, ssbo_in, ssbo_config;
     CellData tmp_buf[XCELLS * YCELLS];
