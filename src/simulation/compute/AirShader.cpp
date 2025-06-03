@@ -62,6 +62,7 @@ layout(std430, binding = 7) readonly restrict buffer ConfigStruct {
 	float dt;
 	float velocityCap;
 	int degreesOfFreedom;
+	float pressureScale;
 };
 
 layout(location = 1) uniform int passNumber = 1; // varies from 1 to 8
@@ -106,6 +107,11 @@ CellData toCellData(vec4 data, bool wall) {
 	return CellData(data.x, data.y, data.z, data.w, wall);
 }
 
+float MIN_PRESSURE = exp(pressureScale * -256.0);
+float MAX_PRESSURE = exp(pressureScale * 256.0);
+
+const float DEFAULT_PRESSURE = 1.0;
+
 CellData getCell(ivec2 pos, CellData data) {
 	int x = pos.x;
 	int y = pos.y;
@@ -120,11 +126,7 @@ CellData getCell(ivec2 pos, CellData data) {
 		return data;
 	}
 
-	data.pv = clamp(data.pv, -10.0, 255.0);
-	data.pv += 10.1;
-
-	data.vx *= 0.1;
-	data.vy *= 0.1;
+	data.pv = clamp(data.pv, MIN_PRESSURE, MAX_PRESSURE);
 
 	float velocity = length(vec2(data.vx, data.vy));
 
@@ -145,8 +147,7 @@ void setCell(ivec2 pos, CellData data) {
 
 	data = toCellData(fromConservedQuantities(toVec4(data)), data.wall);
 
-	data.pv -= 10.1;
-	data.pv = clamp(data.pv, -10.0, 255.0);
+	data.pv = clamp(data.pv, MIN_PRESSURE, MAX_PRESSURE);
 
 	float velocity = length(vec2(data.vx, data.vy));
 
@@ -154,9 +155,6 @@ void setCell(ivec2 pos, CellData data) {
 		data.vx = data.vx / velocity * velocityCap;
 		data.vy = data.vy / velocity * velocityCap;
 	}
-
-	data.vx *= 10.0;
-	data.vy *= 10.0;
 
 	data.hv *= (295.15 / 0.5);
 	data.hv = clamp(data.hv, 73.15, 9999.0);
@@ -271,10 +269,10 @@ void main1() {
 			leftEdge  = vec4(logLeftEdge .xy, exp(logLeftEdge .zw));
 			rightEdge = vec4(logRightEdge.xy, exp(logRightEdge.zw));
 		} else {
-			upperEdge = vec4(0, 0, 10.1, ambientAirTemp * (0.5 / 295.15));
-			lowerEdge = vec4(0, 0, 10.1, ambientAirTemp * (0.5 / 295.15));
-			leftEdge  = vec4(0, 0, 10.1, ambientAirTemp * (0.5 / 295.15));
-			rightEdge = vec4(0, 0, 10.1, ambientAirTemp * (0.5 / 295.15));
+			upperEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
+			lowerEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
+			leftEdge  = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
+			rightEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
 		}
 
 		vec4 temperature = vec4(upperEdge.w, lowerEdge.w, leftEdge.w, rightEdge.w);
@@ -344,7 +342,7 @@ void main2() {
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt * dtMultiplier;
 	} else {
-		thisCell = toConservedQuantities(vec4(0, 0, 10.1, ambientAirTemp * (0.5 / 295.15)));
+		thisCell = toConservedQuantities(vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15)));
 	}
 
 	setCell(pos, toCellData(thisCell, thisCellData.wall));
@@ -395,7 +393,7 @@ void main3() {
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt;
 	} else {
-		thisCell = toConservedQuantities(vec4(0, 0, 10.1, ambientAirTemp * (0.5 / 295.15)));
+		thisCell = toConservedQuantities(vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15)));
 	}
 
 	setCell(pos, toCellData(thisCell, thisCellData.wall));
@@ -474,19 +472,8 @@ AirShader::~AirShader() {
 	glDeleteBuffers(1, &ssbo_config);
 }
 
-void AirShader::upload(Simulation &sim, Air *air) {
-	for (int y = 0; y < YCELLS; y++) {
-		for (int x = 0; x < XCELLS; x++) {
-			tmp_buf[y * XCELLS + x].vx =  sim.vx[y][x];
-			tmp_buf[y * XCELLS + x].vy = -sim.vy[y][x];
-			tmp_buf[y * XCELLS + x].pv =  sim.pv[y][x];
-			tmp_buf[y * XCELLS + x].hv =  sim.hv[y][x];
-			tmp_buf[y * XCELLS + x].wall = air->bmap_blockair[y][x];
-		}
-	}
-
-	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_in);
-	glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, CELL_BUFFER_SIZE, &tmp_buf[0]);
+float AirShader::getPressureScale() {
+	return config.pressureScale;
 }
 
 void AirShader::run(int repetitions, Air *air) {
@@ -560,8 +547,23 @@ void AirShader::run(int repetitions, Air *air) {
 	shader.disable();
 }
 
+void AirShader::upload(Simulation &sim, Air *air) {
+	for (int y = 0; y < YCELLS; y++) {
+		for (int x = 0; x < XCELLS; x++) {
+			tmp_buf[y * XCELLS + x].vx = sim.vx[y][x] / 10.0;
+			tmp_buf[y * XCELLS + x].vy = -sim.vy[y][x] / 10.0;
+			tmp_buf[y * XCELLS + x].pv = std::exp(sim.pv[y][x] * config.pressureScale);
+			tmp_buf[y * XCELLS + x].hv = sim.hv[y][x];
+			tmp_buf[y * XCELLS + x].wall = air->bmap_blockair[y][x];
+		}
+	}
+
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_in);
+	glBufferSubData(GL_SHADER_STORAGE_BUFFER, 0, CELL_BUFFER_SIZE, &tmp_buf[0]);
+}
+
 void AirShader::download(Simulation &sim) {
-    glMemoryBarrier(GL_ALL_BARRIER_BITS);
+	glMemoryBarrier(GL_ALL_BARRIER_BITS);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_in);
 
 	// Read ssbo into tmp_buf
@@ -569,10 +571,10 @@ void AirShader::download(Simulation &sim) {
 
 	for (int y = 0; y < YCELLS; y++) {
 		for (int x = 0; x < XCELLS; x++) {
-			sim.vx[y][x] =  tmp_buf[y * XCELLS + x].vx;
-			sim.vy[y][x] = -tmp_buf[y * XCELLS + x].vy;
-			sim.pv[y][x] =  tmp_buf[y * XCELLS + x].pv;
-			sim.hv[y][x] =  tmp_buf[y * XCELLS + x].hv;
+			sim.vx[y][x] = tmp_buf[y * XCELLS + x].vx * 10.0;
+			sim.vy[y][x] = -tmp_buf[y * XCELLS + x].vy * 10.0;
+			sim.pv[y][x] = std::log(tmp_buf[y * XCELLS + x].pv) / config.pressureScale;
+			sim.hv[y][x] = tmp_buf[y * XCELLS + x].hv;
 		}
 	}
 }

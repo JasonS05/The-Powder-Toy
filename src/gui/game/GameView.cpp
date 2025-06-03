@@ -25,6 +25,7 @@
 #include "graphics/Renderer.h"
 #include "graphics/VideoBuffer.h"
 #include "gui/Style.h"
+#include "simulation/Air.h"
 #include "simulation/ElementClasses.h"
 #include "simulation/ElementDefs.h"
 #include "simulation/SaveRenderer.h"
@@ -2432,24 +2433,24 @@ void GameView::OnDraw()
 						|| type == PT_CONV || type == PT_ETRD)
 					sampleInfo << ", Tmp2: " << sample.particle.tmp2;
 
-				sampleInfo << ", Pressure: " << sample.AirPressure;
+				sampleInfo << ", Pressure: " << sample.AirPressure << " (" << Format::Precision(3) << std::exp(sample.AirPressure * sim->air->air_shader.getPressureScale()) << Format::Precision(2) << " bar)";
 			}
 			else
 			{
 				sampleInfo << c->BasicParticleInfo(sample.particle);
 				sampleInfo << ", Temp: ";
 				format::RenderTemperature(sampleInfo, sample.particle.temp, c->GetTemperatureScale());
-				sampleInfo << ", Pressure: " << sample.AirPressure;
+				sampleInfo << ", Pressure: " << sample.AirPressure << " (" << Format::Precision(3) << std::exp(sample.AirPressure * sim->air->air_shader.getPressureScale()) << Format::Precision(2) << " bar)";
 			}
 		}
 		else if (sample.WallType)
 		{
 			sampleInfo << c->WallName(sample.WallType);
-			sampleInfo << ", Pressure: " << sample.AirPressure;
+			sampleInfo << ", Pressure: " << sample.AirPressure << " (" << Format::Precision(3) << std::exp(sample.AirPressure * sim->air->air_shader.getPressureScale()) << Format::Precision(2) << " bar)";
 		}
 		else if (sample.isMouseInSim)
 		{
-			sampleInfo << "Empty, Pressure: " << sample.AirPressure;
+			sampleInfo << "Empty, Pressure: " << sample.AirPressure << " (" << Format::Precision(3) << std::exp(sample.AirPressure * sim->air->air_shader.getPressureScale()) << Format::Precision(2) << " bar)";
 		}
 		else
 		{
