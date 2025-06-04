@@ -33,7 +33,7 @@ float pclamp(float pressure)
 	return std::clamp(pressure, MIN_PRESSURE, MAX_PRESSURE);
 }
 
-void Air::update_air(void) 
+void Air::update_air(void)
 {
 	auto &vx = sim.vx;
 	auto &vy = sim.vy;

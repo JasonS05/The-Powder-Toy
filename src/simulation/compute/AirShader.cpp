@@ -68,6 +68,7 @@ layout(std430, binding = 7) readonly restrict buffer ConfigStruct {
 layout(location = 1) uniform int passNumber = 1; // varies from 1 to 8
 
 layout(location = 2) uniform float ambientAirTemp;
+layout(location = 3) uniform int aheat_enable;
 
 struct CellData {
 	float vx;
@@ -83,6 +84,11 @@ vec4 fromConservedQuantities(vec4 a) {
 	float kineticEnergy = 0.5 * a.z * (velocity.x * velocity.x + velocity.y * velocity.y);
 	float thermalEnergy = a.w - kineticEnergy;
 	float temperature = thermalEnergy / a.z * (1.0 / float(degreesOfFreedom));
+
+	if (aheat_enable == 0) {
+		temperature = ambientAirTemp * (0.5 / 295.15);
+	}
+
 	float pressure = 2.0 * temperature * a.z;
 
 	return vec4(velocity, pressure, temperature);
@@ -90,6 +96,10 @@ vec4 fromConservedQuantities(vec4 a) {
 
 // (velocity, pressure, temperature) -> (momentum, mass, energy)
 vec4 toConservedQuantities(vec4 a) {
+	if (aheat_enable == 0) {
+		a.w = ambientAirTemp * (0.5 / 295.15);
+	}
+
 	float mass = 0.5 * a.z / a.w;
 	vec2 momentum = a.xy * mass;
 	float kineticEnergy = 0.5 * mass * (a.x * a.x + a.y * a.y);
@@ -135,6 +145,10 @@ CellData getCell(ivec2 pos, CellData data) {
 		data.vy = data.vy / velocity * velocityCap;
 	}
 
+	if (aheat_enable == 0) {
+		data.hv = ambientAirTemp;
+	}
+
 	data.hv = clamp(data.hv, 73.15, 9999.0);
 	data.hv *= (0.5 / 295.15);
 
@@ -158,6 +172,10 @@ void setCell(ivec2 pos, CellData data) {
 
 	data.hv *= (295.15 / 0.5);
 	data.hv = clamp(data.hv, 73.15, 9999.0);
+
+	if (aheat_enable == 0) {
+		data.hv = ambientAirTemp;
+	}
 
 	if (isnan(data.vx) || isnan(data.vy) || isnan(data.pv) || isnan(data.hv)) {
 		data.vx = 0.0;
@@ -480,6 +498,7 @@ void AirShader::run(int repetitions, Air *air) {
 	shader.enable();
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, ssbo_config);
 	glUniform1f(2, air->ambientAirTemp);
+	glUniform1i(3, air->sim.aheat_enable);
 
 	for (int i = 0; i < repetitions; i++) {
 		// Runge-Kutta 4
@@ -550,8 +569,8 @@ void AirShader::run(int repetitions, Air *air) {
 void AirShader::upload(Simulation &sim, Air *air) {
 	for (int y = 0; y < YCELLS; y++) {
 		for (int x = 0; x < XCELLS; x++) {
-			tmp_buf[y * XCELLS + x].vx = sim.vx[y][x] / 10.0;
-			tmp_buf[y * XCELLS + x].vy = -sim.vy[y][x] / 10.0;
+			tmp_buf[y * XCELLS + x].vx = sim.vx[y][x] / 1.6;
+			tmp_buf[y * XCELLS + x].vy = -sim.vy[y][x] / 1.6;
 			tmp_buf[y * XCELLS + x].pv = std::exp(sim.pv[y][x] * config.pressureScale);
 			tmp_buf[y * XCELLS + x].hv = sim.hv[y][x];
 			tmp_buf[y * XCELLS + x].wall = air->bmap_blockair[y][x];
@@ -571,8 +590,8 @@ void AirShader::download(Simulation &sim) {
 
 	for (int y = 0; y < YCELLS; y++) {
 		for (int x = 0; x < XCELLS; x++) {
-			sim.vx[y][x] = tmp_buf[y * XCELLS + x].vx * 10.0;
-			sim.vy[y][x] = -tmp_buf[y * XCELLS + x].vy * 10.0;
+			sim.vx[y][x] = tmp_buf[y * XCELLS + x].vx * 1.6;
+			sim.vy[y][x] = -tmp_buf[y * XCELLS + x].vy * 1.6;
 			sim.pv[y][x] = std::log(tmp_buf[y * XCELLS + x].pv) / config.pressureScale;
 			sim.hv[y][x] = tmp_buf[y * XCELLS + x].hv;
 		}

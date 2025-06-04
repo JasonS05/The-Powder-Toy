@@ -939,15 +939,15 @@ void Renderer::draw_air()
 			if (displayMode & DISPLAY_AIRP)
 			{
 				if (pv[y][x] > 0.0f)
-					c = RGB(clamp_flt(pv[y][x], 0.0f, 8.0f), 0, 0);//positive pressure is red!
+					c = RGB(clamp_flt(pv[y][x], 0.0f, 16.0f), 0, 0);//positive pressure is red!
 				else
-					c = RGB(0, 0, clamp_flt(-pv[y][x], 0.0f, 8.0f));//negative pressure is blue!
+					c = RGB(0, 0, clamp_flt(-pv[y][x], 0.0f, 16.0f));//negative pressure is blue!
 			}
 			else if (displayMode & DISPLAY_AIRV)
 			{
-				c = RGB(clamp_flt(fabsf(vx[y][x]), 0.0f, 8.0f),//vx adds red
-					clamp_flt(pv[y][x], 0.0f, 8.0f),//pressure adds green
-					clamp_flt(fabsf(vy[y][x]), 0.0f, 8.0f));//vy adds blue
+				c = RGB(clamp_flt(fabsf(vx[y][x]), 0.0f, 1.0f),//vx adds red
+					clamp_flt(pv[y][x], 0.0f, 16.0f),//pressure adds green
+					clamp_flt(fabsf(vy[y][x]), 0.0f, 1.0f));//vy adds blue
 			}
 			else if (displayMode & DISPLAY_AIRH)
 			{
@@ -962,14 +962,14 @@ void Renderer::draw_air()
 				int g;
 				int b;
 				// velocity adds grey
-				float brightness = std::hypot(vx[y][x], vy[y][x]);
+				float brightness = std::hypot(vx[y][x], vy[y][x]) * 8.0f;
 				float greenness = 2.0f * fabsf(fabsf(2.0f / 3.1415926f * std::atan2(vy[y][x], vx[y][x])) - 1.0f) - 1.0f;
 				r = clamp_flt(brightness, 0.0f, 20.0f + 4.0f * std::clamp( greenness, 0.0f, 1.0f));
 				g = clamp_flt(brightness, 0.0f, 20.0f + 4.0f * std::clamp(-greenness, 0.0f, 1.0f));
 				b = clamp_flt(brightness, 0.0f, 20.0f + 4.0f * std::clamp( greenness, 0.0f, 1.0f));
 				if (pv[y][x] > 0.0f)
 				{
-					r += clamp_flt(pv[y][x], 0.0f, 16.0f);//pressure adds red!
+					r += clamp_flt(pv[y][x], 0.0f, 32.0f);//pressure adds red!
 					if (r>255)
 						r=255;
 					if (g>255)
@@ -980,7 +980,7 @@ void Renderer::draw_air()
 				}
 				else
 				{
-					b += clamp_flt(-pv[y][x], 0.0f, 16.0f);//pressure adds blue!
+					b += clamp_flt(-pv[y][x], 0.0f, 32.0f);//pressure adds blue!
 					if (r>255)
 						r=255;
 					if (g>255)
