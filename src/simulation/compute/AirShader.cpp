@@ -497,7 +497,7 @@ float AirShader::getPressureScale() {
 void AirShader::run(int repetitions, Air *air) {
 	shader.enable();
 	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, ssbo_config);
-	glUniform1f(2, air->ambientAirTemp);
+	glUniform1f(2, std::max(air->ambientAirTemp, 73.15f));
 	glUniform1i(3, air->sim.aheat_enable);
 
 	for (int i = 0; i < repetitions; i++) {
