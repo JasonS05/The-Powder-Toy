@@ -89,7 +89,7 @@ static int update(UPDATE_FUNC_ARGS)
 						rr = int(sim->rng.between(128, 355) / 127.0f);
 					parts[ID(r)].vx = rr*cosf(rrr);
 					parts[ID(r)].vy = rr*sinf(rrr);
-					sim->pv[y/CELL][x/CELL] -= 15.0f * CFDS;
+					sim->AddPressure(x / CELL, y / CELL, 15.0f * CFDS);
 				}
 			}
 			else if((TYP(r) == PT_QRTZ || TYP(r) == PT_PQRT) && !ry && !rx)//if on QRTZ

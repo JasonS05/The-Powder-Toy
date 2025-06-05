@@ -80,7 +80,7 @@ static int update(UPDATE_FUNC_ARGS)
 								{
 									if (nt)
 										sim->kill_part(ID(pmap[ynxj][xnxi]));
-									sim->pv[(ynxj)/CELL][(xnxi)/CELL] += 0.1f;
+									sim->AddPressure(xnxi / CELL, ynxj / CELL, 0.1f);
 									auto nb = sim->create_part(-3, xnxi, ynxj, PT_EMBR);
 									if (nb!=-1)
 									{

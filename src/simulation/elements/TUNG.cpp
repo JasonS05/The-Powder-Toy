@@ -78,7 +78,7 @@ static int update(UPDATE_FUNC_ARGS)
 	{
 		if (sim->rng.chance(1, 50))
 		{
-			sim->pv[y/CELL][x/CELL] += 50.0f;
+			sim->AddPressure(x / CELL, y / CELL, 50.0f);
 		}
 		else if (sim->rng.chance(1, 100))
 		{

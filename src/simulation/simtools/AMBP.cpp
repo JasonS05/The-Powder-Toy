@@ -18,8 +18,7 @@ static int perform(SimTool *tool, Simulation *sim, Particle *cpart, int x, int y
 		return 0;
 	}
 
-	sim->hv[y / CELL][x / CELL] += strength * 2.0f;
-	if (sim->hv[y / CELL][x / CELL] > MAX_TEMP) sim->hv[y / CELL][x / CELL] = MAX_TEMP;
-	if (sim->hv[y / CELL][x / CELL] < MIN_TEMP) sim->hv[y / CELL][x / CELL] = MIN_TEMP;
+	sim->AddAmbientHeat(x / CELL, y / CELL, strength * 2.0f);
+
 	return 1;
 }

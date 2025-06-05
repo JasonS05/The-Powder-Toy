@@ -62,7 +62,7 @@ static int update(UPDATE_FUNC_ARGS)
 					sim->part_change_type(i,x,y,PT_CFLM);
 					parts[i].life = sim->rng.between(50, 199);
 					parts[ID(r)].temp = parts[i].temp = 0;
-					sim->pv[y/CELL][x/CELL] -= 0.5;
+					sim->AddPressure(x / CELL, y / CELL, 0.5);
 				}
 			}
 		}

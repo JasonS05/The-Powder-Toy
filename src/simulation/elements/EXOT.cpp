@@ -129,7 +129,7 @@ static int update(UPDATE_FUNC_ARGS)
 		}
 	}
 	else if(parts[i].life < 1001)
-		sim->pv[y/CELL][x/CELL] += (parts[i].tmp2*CFDS)/160000;
+		sim->AddPressure(x / CELL, y / CELL, (parts[i].tmp2 * CFDS) / 160000);
 
 	if (sim->pv[y/CELL][x/CELL]>200 && parts[i].temp>9000 && parts[i].tmp2>200)
 	{
@@ -183,7 +183,7 @@ static int update(UPDATE_FUNC_ARGS)
 	{
 		parts[i].vx = 0;
 		parts[i].vy = 0;
-		sim->pv[y/CELL][x/CELL] -= 0.01f;
+		sim->AddPressure(x / CELL, y / CELL, 0.01f);
 		parts[i].tmp--;
 	}
 	return 0;

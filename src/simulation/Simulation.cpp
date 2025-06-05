@@ -15,6 +15,7 @@
 #include "elements/PIPE.h"
 #include "elements/FILT.h"
 #include "elements/PRTI.h"
+#include "compute/AirShader.h"
 #include <iostream>
 #include <set>
 
@@ -1040,6 +1041,43 @@ void Simulation::clear_sim(void)
 		air->ClearAirH();
 	}
 	SetEdgeMode(edgeMode);
+}
+
+void Simulation::SetAmbientHeat(int x, int y, float temperature) {
+	AddAmbientHeat(x, y, (temperature - hv[y][x]) * CELL * CELL / 16.0f);
+}
+
+void Simulation::AddAmbientHeat(int x, int y, float temperature) {
+	float oldTemperature = hv[y][x];
+	float newTemperature = std::clamp(oldTemperature + temperature * 16.0f / (CELL * CELL), 73.15f, MAX_TEMP);
+	hv[y][x] = newTemperature;
+
+	const ConfigStruct &config = air->air_shader.config;
+
+	float pressureChange = std::log(newTemperature / oldTemperature) / config.pressureScale;
+	pv[y][x] = std::clamp(pv[y][x] + pressureChange, MIN_PRESSURE, MAX_PRESSURE);
+}
+
+void Simulation::SetPressure(int x, int y, float pressure) {
+	AddPressure(x, y, (pressure - pv[y][x]) * CELL * CELL / 16.0f);
+}
+
+void Simulation::AddPressure(int x, int y, float pressure) {
+	float oldPressure = pv[y][x];
+	float newPressure = std::clamp(oldPressure + pressure * 16.0f / (CELL * CELL), MIN_PRESSURE, MAX_PRESSURE);
+	pv[y][x] = newPressure;
+
+	if (aheat_enable == 0) {
+		return;
+	}
+
+	const ConfigStruct &config = air->air_shader.config;
+
+	float pressureRatio = std::exp((newPressure - oldPressure) * config.pressureScale);
+	float adiabaticIndex = (config.degreesOfFreedom + 2.0) / config.degreesOfFreedom;
+	float temperatureRatio = std::pow(pressureRatio, (adiabaticIndex - 1) / adiabaticIndex);
+
+	hv[y][x] = std::clamp(hv[y][x] * temperatureRatio, MIN_TEMP, MAX_TEMP);
 }
 
 bool Simulation::IsWallBlocking(int x, int y, int type) const
@@ -2258,27 +2296,27 @@ void Simulation::UpdateParticles(int start, int end)
 				if (t==PT_GAS||t==PT_NBLE)
 				{
 					if (pv[y/CELL][x/CELL]<3.5f)
-						pv[y/CELL][x/CELL] += elements[t].HotAir*(3.5f-pv[y/CELL][x/CELL]);
+						AddPressure(x / CELL, y / CELL, elements[t].HotAir * (3.5f - pv[y / CELL][x / CELL]));
 					if (y+CELL<YRES && pv[y/CELL+1][x/CELL]<3.5f)
-						pv[y/CELL+1][x/CELL] += elements[t].HotAir*(3.5f-pv[y/CELL+1][x/CELL]);
+						AddPressure(x / CELL, y / CELL + 1, elements[t].HotAir * (3.5f - pv[y / CELL + 1][x / CELL]));
 					if (x+CELL<XRES)
 					{
 						if (pv[y/CELL][x/CELL+1]<3.5f)
-							pv[y/CELL][x/CELL+1] += elements[t].HotAir*(3.5f-pv[y/CELL][x/CELL+1]);
+							AddPressure(x / CELL + 1, y / CELL, elements[t].HotAir * (3.5f - pv[y / CELL][x / CELL + 1]));
 						if (y+CELL<YRES && pv[y/CELL+1][x/CELL+1]<3.5f)
-							pv[y/CELL+1][x/CELL+1] += elements[t].HotAir*(3.5f-pv[y/CELL+1][x/CELL+1]);
+							AddPressure(x / CELL + 1, y / CELL + 1, elements[t].HotAir * (3.5f - pv[y / CELL + 1][x / CELL + 1]));
 					}
 				}
 				else//add the hotair variable to the pressure map, like black hole, or white hole.
 				{
-					pv[y/CELL][x/CELL] += elements[t].HotAir;
+					AddPressure(x / CELL, y / CELL, elements[t].HotAir);
 					if (y+CELL<YRES)
-						pv[y/CELL+1][x/CELL] += elements[t].HotAir;
+						AddPressure(x / CELL, y / CELL + 1, elements[t].HotAir);
 					if (x+CELL<XRES)
 					{
-						pv[y/CELL][x/CELL+1] += elements[t].HotAir;
+						AddPressure(x / CELL + 1, y / CELL, elements[t].HotAir);
 						if (y+CELL<YRES)
-							pv[y/CELL+1][x/CELL+1] += elements[t].HotAir;
+							AddPressure(x / CELL + 1, y / CELL + 1, elements[t].HotAir);
 					}
 				}
 			}
@@ -2369,7 +2407,7 @@ void Simulation::UpdateParticles(int start, int end)
 						auto c_heat = (hv[y/CELL][x/CELL]-parts[i].temp)*0.04;
 						c_heat = restrict_flt(c_heat, -MAX_TEMP+MIN_TEMP, MAX_TEMP-MIN_TEMP);
 						parts[i].temp += c_heat;
-						hv[y/CELL][x/CELL] -= c_heat;
+						AddAmbientHeat(x / CELL, y / CELL, -c_heat);
 					}
 					auto c_heat = 0.0f;
 					int surround_hconduct[8];
@@ -2589,7 +2627,7 @@ void Simulation::UpdateParticles(int start, int end)
 							parts[i].tmp = 0;
 						}
 						if ((elements[t].Properties&TYPE_GAS) && !(elements[parts[i].type].Properties&TYPE_GAS))
-							pv[y/CELL][x/CELL] += 0.50f;
+							AddPressure(x / CELL, y / CELL, 0.50f);
 
 						if (t == PT_NONE)
 						{
@@ -2689,7 +2727,7 @@ void Simulation::UpdateParticles(int start, int end)
 				parts[i].temp = restrict_flt(elements[PT_FIRE].DefaultProperties.temp + (elements[t].Flammable/2), MIN_TEMP, MAX_TEMP);
 				t = PT_FIRE;
 				part_change_type(i,x,y,t);
-				pv[y/CELL][x/CELL] += 0.25f * CFDS;
+				AddPressure(x / CELL, y / CELL, 0.25f * CFDS);
 			}
 
 			{

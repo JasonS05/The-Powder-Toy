@@ -105,7 +105,7 @@ static int update(UPDATE_FUNC_ARGS)
 					parts[j].temp = MAX_TEMP;
 			}
 			parts[i].temp = MAX_TEMP;
-			sim->pv[y/CELL][x/CELL] += 100;
+			sim->AddPressure(x / CELL, y / CELL, 100);
 		}
 	}
 	return 0;

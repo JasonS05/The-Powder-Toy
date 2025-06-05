@@ -161,7 +161,7 @@ int Element_FIRE_update(UPDATE_FUNC_ARGS)
 						sim->part_change_type(ID(r),x+rx,y+ry,PT_LAVA);
 						parts[ID(r)].ctype = PT_BMTL;
 						parts[ID(r)].temp = 3500.0f;
-						sim->pv[(y+ry)/CELL][(x+rx)/CELL] += 50.0f;
+						sim->AddPressure((x + rx) / CELL, (y + ry) / CELL, 50.0f);
 					} else {
 						sim->part_change_type(ID(r),x+rx,y+ry,PT_LAVA);
 						parts[ID(r)].life = 400;
@@ -274,7 +274,7 @@ int Element_FIRE_update(UPDATE_FUNC_ARGS)
 					parts[ID(r)].life = sim->rng.between(180, 259);
 					parts[ID(r)].tmp = parts[ID(r)].ctype = 0;
 					if (elements[rt].Explosive)
-						sim->pv[y/CELL][x/CELL] += 0.25f * CFDS;
+						sim->AddPressure(x / CELL, y / CELL, 0.25f * CFDS);
 				}
 			}
 		}

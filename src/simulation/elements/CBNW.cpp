@@ -59,7 +59,7 @@ static int update(UPDATE_FUNC_ARGS)
 		{
 			sim->part_change_type(i,x,y,PT_CO2);
 			parts[i].ctype = 5;
-			sim->pv[y/CELL][x/CELL] += 0.5f;
+			sim->AddPressure(x / CELL, y / CELL, 0.5f);
 		}
 	}
 	if (parts[i].tmp2!=20) {
@@ -77,7 +77,7 @@ static int update(UPDATE_FUNC_ARGS)
 		{
 			sim->part_change_type(i,x,y,PT_CO2);
 			parts[i].ctype = 5;
-			sim->pv[y/CELL][x/CELL] += 0.2f;
+			sim->AddPressure(x / CELL, y / CELL, 0.2f);
 		}
 		parts[i].tmp--;
 	}
@@ -99,7 +99,7 @@ static int update(UPDATE_FUNC_ARGS)
 				{
 					sim->part_change_type(i,x,y,PT_CO2);
 					parts[i].ctype = 5;
-					sim->pv[y/CELL][x/CELL] += 0.2f;
+					sim->AddPressure(x / CELL, y / CELL, 0.2f);
 				}
 				if (TYP(r)==PT_CBNW)
 				{

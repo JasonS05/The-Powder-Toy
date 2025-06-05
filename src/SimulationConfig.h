@@ -30,7 +30,7 @@ constexpr int WINDOWH = WINDOW.Y;
 constexpr int MAXSIGNS = 16;
 
 constexpr int   ISTP            = CELL / 2;
-constexpr float CFDS            = 4.0f / CELL;
+constexpr float CFDS            = 1.0f; // used to be 4.0f / CELL, got nuked because that's not even correct and I'm handling cell size changes differently
 constexpr float MAX_VELOCITY = 1e4f;
 
 //Air constants

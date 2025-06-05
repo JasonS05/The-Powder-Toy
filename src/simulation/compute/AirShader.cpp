@@ -63,6 +63,8 @@ layout(std430, binding = 7) readonly restrict buffer ConfigStruct {
 	float velocityCap;
 	int degreesOfFreedom;
 	float pressureScale;
+	float MAX_TPT_PRESSURE;
+	float MIN_TPT_PRESSURE;
 };
 
 layout(location = 1) uniform int passNumber = 1; // varies from 1 to 8
@@ -117,8 +119,8 @@ CellData toCellData(vec4 data, bool wall) {
 	return CellData(data.x, data.y, data.z, data.w, wall);
 }
 
-float MIN_PRESSURE = exp(pressureScale * -256.0);
-float MAX_PRESSURE = exp(pressureScale * 256.0);
+float MAX_PRESSURE = exp(pressureScale * MAX_TPT_PRESSURE);
+float MIN_PRESSURE = exp(pressureScale * MIN_TPT_PRESSURE);
 
 const float DEFAULT_PRESSURE = 1.0;
 
@@ -468,9 +470,6 @@ void main() {
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_out);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, CELL_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
 
-	config.XCELLS = XCELLS;
-	config.YCELLS = YCELLS;
-
 	glGenBuffers(1, &ssbo_config);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_config);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, sizeof(ConfigStruct), &config, GL_STATIC_DRAW);
@@ -488,10 +487,6 @@ AirShader::~AirShader() {
 	glDeleteBuffers(1, &ssbo_flux4);
 	glDeleteBuffers(1, &ssbo_out);
 	glDeleteBuffers(1, &ssbo_config);
-}
-
-float AirShader::getPressureScale() {
-	return config.pressureScale;
 }
 
 void AirShader::run(int repetitions, Air *air) {

@@ -122,7 +122,7 @@ static int update(UPDATE_FUNC_ARGS)
 			if (parts[i].temp > 5273.15)
 				parts[i].tmp |= 0x4;
 			parts[i].temp = 3500;
-			sim->pv[y/CELL][x/CELL] += 1;
+			sim->AddPressure(x / CELL, y / CELL, 1);
 		}
 		break;
 	case PT_TESC:
@@ -153,9 +153,9 @@ static int update(UPDATE_FUNC_ARGS)
 							if (fabs(sim->pv[y/CELL][x/CELL])!=0.0f)
 							{
 								if (fabs(sim->pv[y/CELL][x/CELL])<=0.5f)
-									sim->pv[y/CELL][x/CELL]=0;
+									sim->SetPressure(x / CELL, y / CELL, 0);
 								else
-									sim->pv[y/CELL][x/CELL]-=(sim->pv[y/CELL][x/CELL]>0)?0.5:-0.5;
+									sim->AddPressure(x / CELL, y / CELL, (sim->pv[y / CELL][x / CELL] > 0)? -0.5 : 0.5);
 							}
 						}
 					}

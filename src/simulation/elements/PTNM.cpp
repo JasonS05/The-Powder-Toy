@@ -116,7 +116,7 @@ static void hygn_reactions(int hygn1_id, UPDATE_FUNC_ARGS)
 
 					parts[ID(r)].temp += 1000.0f;
 					parts[hygn1_id].temp += 1000.0f;
-					sim->pv[(y + ry) / CELL][(x + rx) / CELL] += 10.0f;
+					sim->AddPressure((x + rx) / CELL, (y + ry) / CELL, 10.0f);
 
 					int j = sim->create_part(-3, x + rx, y + ry, PT_PHOT);
 					if (j > -1)

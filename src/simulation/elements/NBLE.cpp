@@ -87,7 +87,7 @@ static int update(UPDATE_FUNC_ARGS)
 				}
 			}
 			parts[i].temp = temp + 1750 + sim->rng.between(0, 499);
-			sim->pv[y/CELL][x/CELL] += 50;
+			sim->AddPressure(x / CELL, y / CELL, 50);
 		}
 	}
 	return 0;

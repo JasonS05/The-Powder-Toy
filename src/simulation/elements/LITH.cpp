@@ -177,9 +177,9 @@ static int update(UPDATE_FUNC_ARGS)
 					{
 						sim->part_change_type(i, x, y, PT_PLSM);
 						sim->part_change_type(ID(neighborData), x + rx, y + ry, PT_PLSM);
-						sim->pv[y / CELL][x / CELL] += 4.0;
+						sim->AddPressure(x / CELL, y / CELL, 4.0);
 						return 0;
-					}						
+					}
 					break;
 				}
 			}

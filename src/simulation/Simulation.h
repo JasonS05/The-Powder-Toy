@@ -180,6 +180,10 @@ public:
 	template<bool UpdateEmap, class Sim>
 	static PlanMoveResult PlanMove(Sim &sim, int i, int x, int y);
 
+	void SetAmbientHeat(int x, int y, float temperature);
+	void AddAmbientHeat(int x, int y, float temperature);
+	void SetPressure(int x, int y, float pressure);
+	void AddPressure(int x, int y, float pressure);
 	bool IsWallBlocking(int x, int y, int type) const;
 	void create_cherenkov_photon(int pp);
 	void create_gain_photon(int pp);

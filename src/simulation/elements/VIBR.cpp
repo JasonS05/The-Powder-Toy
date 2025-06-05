@@ -71,12 +71,12 @@ int Element_VIBR_update(UPDATE_FUNC_ARGS)
 		if (sim->pv[y/CELL][x/CELL] > 2.5)
 		{
 			parts[i].tmp += 7;
-			sim->pv[y/CELL][x/CELL]--;
+			sim->AddPressure(x / CELL, y / CELL, -1);
 		}
 		else if (sim->pv[y/CELL][x/CELL] < -2.5)
 		{
 			parts[i].tmp -= 2;
-			sim->pv[y/CELL][x/CELL]++;
+			sim->AddPressure(x / CELL, y / CELL, 1);
 		}
 		//initiate explosion counter
 		if (parts[i].tmp > 1000)
@@ -129,7 +129,7 @@ int Element_VIBR_update(UPDATE_FUNC_ARGS)
 				sim->create_part(i, x, y, PT_EXOT);
 				parts[i].tmp2 = (rndstore >> 9) % 1000;
 				parts[i].temp=9000;
-				sim->pv[y/CELL][x/CELL] += 50;
+				sim->AddPressure(x / CELL, y / CELL, 50);
 
 				return 1;
 			}
@@ -183,7 +183,7 @@ int Element_VIBR_update(UPDATE_FUNC_ARGS)
 				if (parts[i].type != PT_BVBR && TYP(r) == PT_ANAR)
 				{
 					sim->part_change_type(i,x,y,PT_BVBR);
-					sim->pv[y/CELL][x/CELL] -= 1;
+					sim->AddPressure(x / CELL, y / CELL, -1);
 				}
 			}
 		}

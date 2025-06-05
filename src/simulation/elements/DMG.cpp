@@ -84,7 +84,7 @@ static int update(UPDATE_FUNC_ARGS)
 										parts[ID(rr)].vy += fy;
 										sim->vx[(y+nxj)/CELL][(x+nxi)/CELL] += fx;
 										sim->vy[(y+nxj)/CELL][(x+nxi)/CELL] += fy;
-										sim->pv[(y+nxj)/CELL][(x+nxi)/CELL] += 1.0f;
+										sim->AddPressure((x + nxi) / CELL, (y + nxj) / CELL, 1.0f);
 										auto t = TYP(rr);
 										if (t && elements[t].HighPressureTransition>-1 && elements[t].HighPressureTransition<PT_NUM)
 											sim->part_change_type(ID(rr), x+nxi, y+nxj, elements[t].HighPressureTransition);

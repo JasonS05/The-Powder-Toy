@@ -73,12 +73,11 @@ static int update(UPDATE_FUNC_ARGS)
 	//Element_FIRE::update(UPDATE_FUNC_SUBCALL_ARGS);
 	if (sim->aheat_enable)
 	{
-		sim->hv[y/CELL][x/CELL] += powderful/50;
-		if (sim->hv[y/CELL][x/CELL] > MAX_TEMP)
-			sim->hv[y/CELL][x/CELL] = MAX_TEMP;
+		sim->AddAmbientHeat(x / CELL, y / CELL, powderful / 50);
+
 		// If the LIGH was so powerful that it overflowed hv, set to max temp
-		else if (sim->hv[y/CELL][x/CELL] < 0)
-			sim->hv[y/CELL][x/CELL] = MAX_TEMP;
+		if (sim->hv[y/CELL][x/CELL] < 0)
+			sim->SetAmbientHeat(x / CELL, y / CELL, MAX_TEMP);
 	}
 
 	auto &sd = SimulationData::CRef();
@@ -102,7 +101,7 @@ static int update(UPDATE_FUNC_ARGS)
 					parts[ID(r)].life = sim->rng.between(180, 259);
 					parts[ID(r)].tmp = parts[ID(r)].ctype = 0;
 					if (elements[rt].Explosive)
-						sim->pv[y/CELL][x/CELL] += 0.25f * CFDS;
+						sim->AddPressure(x / CELL, y / CELL, 0.25f * CFDS);
 				}
 				switch (rt)
 				{
@@ -118,7 +117,7 @@ static int update(UPDATE_FUNC_ARGS)
 				case PT_DEUT:
 				case PT_PLUT:
 					parts[ID(r)].temp = restrict_flt(parts[ID(r)].temp+powderful, MIN_TEMP, MAX_TEMP);
-					sim->pv[y/CELL][x/CELL] +=powderful/35;
+					sim->AddPressure(x / CELL, y / CELL, powderful / 35);
 					if (sim->rng.chance(1, 3))
 					{
 						sim->part_change_type(ID(r),x+rx,y+ry,PT_NEUT);
@@ -153,7 +152,7 @@ static int update(UPDATE_FUNC_ARGS)
 				}
 				if ((elements[TYP(r)].Properties&PROP_CONDUCTS) && parts[ID(r)].life==0)
 					sim->create_part(ID(r),x+rx,y+ry,PT_SPRK);
-				sim->pv[y/CELL][x/CELL] += powderful/400;
+				sim->AddPressure(x / CELL, y / CELL, powderful / 400);
 				if (!sim->IsHeatInsulator(parts[ID(r)])) parts[ID(r)].temp = restrict_flt(parts[ID(r)].temp+powderful/1.3, MIN_TEMP, MAX_TEMP);
 			}
 		}

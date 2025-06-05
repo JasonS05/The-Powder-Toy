@@ -462,14 +462,14 @@ int Element_STKM_run_stickman(playerst *playerp, UPDATE_FUNC_ARGS)
 					{
 						int airx = rx + 3*((((int)playerp->pcomm)&0x02) == 0x02) - 3*((((int)playerp->pcomm)&0x01) == 0x01)+j;
 						int airy = ry+k;
-						sim->pv[airy/CELL][airx/CELL] += 0.03f;
+						sim->AddPressure(airx / CELL, airy/CELL, 0.03f);
 						if (airy + CELL < YRES)
-							sim->pv[airy/CELL+1][airx/CELL] += 0.03f;
+							sim->AddPressure(airx / CELL, airy / CELL + 1, 0.03f);
 						if (airx + CELL < XRES)
 						{
-							sim->pv[airy/CELL][airx/CELL+1] += 0.03f;
+							sim->AddPressure(airx / CELL + 1, airy / CELL, 0.03f);
 							if (airy + CELL < YRES)
-								sim->pv[airy/CELL+1][airx/CELL+1] += 0.03f;
+								sim->AddPressure(airx / CELL + 1, airy / CELL + 1, 0.03f);
 						}
 					}
 			}

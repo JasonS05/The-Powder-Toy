@@ -56,7 +56,7 @@ static int update(UPDATE_FUNC_ARGS)
 {
 	auto &sd = SimulationData::CRef();
 	auto &elements = sd.elements;
-	sim->pv[y/CELL][x/CELL] -= .003f;
+	sim->AddPressure(x / CELL, y / CELL, -0.003f);
 	int under = pmap[y][x];
 	int utype = TYP(under);
 	int uID = ID(under);
@@ -127,7 +127,7 @@ static int update(UPDATE_FUNC_ARGS)
 		{
 			sim->create_part(uID, x, y, PT_FIRE);
 			parts[uID].temp += restrict_flt(float(elements[utype].Flammable * 5), MIN_TEMP, MAX_TEMP);
-			sim->pv[y / CELL][x / CELL] += 1.00f;
+			sim->AddPressure(x / CELL, y / CELL, 1.00f);
 		}
 		//prevent inactive sparkable elements from being sparked
 		else if ((elements[utype].Properties&PROP_CONDUCTS) && parts[uID].life <= 4)
@@ -204,7 +204,7 @@ static int DeutImplosion(Simulation * sim, int n, int x, int y, float temp, int 
 		else if (sim->MaxPartsReached())
 			break;
 	}
-	sim->pv[y/CELL][x/CELL] -= (6.0f * CFDS)*n;
+	sim->AddPressure(x / CELL, y / CELL, -6.0f * CFDS * n);
 	return 0;
 }
 
