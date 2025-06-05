@@ -1077,7 +1077,7 @@ void Simulation::AddPressure(int x, int y, float pressure) {
 	float adiabaticIndex = (config.degreesOfFreedom + 2.0) / config.degreesOfFreedom;
 	float temperatureRatio = std::pow(pressureRatio, (adiabaticIndex - 1) / adiabaticIndex);
 
-	hv[y][x] = std::clamp(hv[y][x] * temperatureRatio, MIN_TEMP, MAX_TEMP);
+	hv[y][x] = std::clamp(hv[y][x] * temperatureRatio, 73.15f, MAX_TEMP);
 }
 
 bool Simulation::IsWallBlocking(int x, int y, int type) const
