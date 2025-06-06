@@ -1058,6 +1058,23 @@ void Simulation::AddAmbientHeat(int x, int y, float temperature) {
 	pv[y][x] = std::clamp(pv[y][x] + pressureChange, MIN_PRESSURE, MAX_PRESSURE);
 }
 
+// temperature is the amount desired to be transferred, the return value is the amount actually transferred
+float Simulation::TransferAmbientHeat(int x, int y, float temperature) {
+	const ConfigStruct &config = air->air_shader.config;
+
+	float density = std::exp(pv[y][x] * config.pressureScale) / hv[y][x] * 293.15;
+
+	if (density >= 1) {
+		AddAmbientHeat(x, y, temperature / density);
+
+		return temperature;
+	} else {
+		AddAmbientHeat(x, y, temperature);
+
+		return temperature * density;
+	}
+}
+
 void Simulation::SetPressure(int x, int y, float pressure) {
 	AddPressure(x, y, (pressure - pv[y][x]) * CELL * CELL / 16.0f);
 }
@@ -2406,8 +2423,7 @@ void Simulation::UpdateParticles(int start, int end)
 					{
 						auto c_heat = (hv[y/CELL][x/CELL]-parts[i].temp)*0.04;
 						c_heat = restrict_flt(c_heat, -MAX_TEMP+MIN_TEMP, MAX_TEMP-MIN_TEMP);
-						parts[i].temp += c_heat;
-						AddAmbientHeat(x / CELL, y / CELL, -c_heat);
+						parts[i].temp -= TransferAmbientHeat(x / CELL, y / CELL, -c_heat);;
 					}
 					auto c_heat = 0.0f;
 					int surround_hconduct[8];

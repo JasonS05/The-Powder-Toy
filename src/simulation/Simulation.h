@@ -182,6 +182,7 @@ public:
 
 	void SetAmbientHeat(int x, int y, float temperature);
 	void AddAmbientHeat(int x, int y, float temperature);
+	float TransferAmbientHeat(int x, int y, float temperature);
 	void SetPressure(int x, int y, float pressure);
 	void AddPressure(int x, int y, float pressure);
 	bool IsWallBlocking(int x, int y, int type) const;
