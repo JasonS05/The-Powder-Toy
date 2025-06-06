@@ -2293,8 +2293,8 @@ void Simulation::UpdateParticles(int start, int end)
 				set_emap(x/CELL, y/CELL);
 
 			//adding to velocity from the particle's velocity
-			vx[y/CELL][x/CELL] = vx[y/CELL][x/CELL]*elements[t].AirLoss + elements[t].AirDrag*parts[i].vx;
-			vy[y/CELL][x/CELL] = vy[y/CELL][x/CELL]*elements[t].AirLoss + elements[t].AirDrag*parts[i].vy;
+			vx[y / CELL][x / CELL] += elements[t].AirDrag * (parts[i].vx - vx[y / CELL][x / CELL]);
+			vy[y / CELL][x / CELL] += elements[t].AirDrag * (parts[i].vy - vy[y / CELL][x / CELL]);
 
 			if (elements[t].HotAir)
 			{
@@ -2333,15 +2333,16 @@ void Simulation::UpdateParticles(int start, int end)
 			}
 
 			//velocity updates for the particle
-			if (t != PT_SPNG || !(parts[i].flags&FLAG_MOVABLE))
+			if (elements[t].Loss == 1.0f)
 			{
-				parts[i].vx *= elements[t].Loss;
-				parts[i].vy *= elements[t].Loss;
+				parts[i].vx = 0;
+				parts[i].vy = 0;
 			}
-			//particle gets velocity from the vx and vy maps
-			parts[i].vx += elements[t].Advection*vx[y/CELL][x/CELL] + pGravX;
-			parts[i].vy += elements[t].Advection*vy[y/CELL][x/CELL] + pGravY;
 
+			//particle gets velocity from the vx and vy maps
+			float density = GetAirDensity(x / CELL, y / CELL);
+			parts[i].vx += density * elements[t].AirDrag * (vx[y / CELL][x / CELL] - parts[i].vx) + pGravX;
+			parts[i].vy += density * elements[t].AirDrag * (vy[y / CELL][x / CELL] - parts[i].vy) + pGravY;
 
 			if (elements[t].Diffusion)//the random diffusion that gasses have
 			{
