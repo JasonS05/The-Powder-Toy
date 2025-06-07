@@ -2333,11 +2333,8 @@ void Simulation::UpdateParticles(int start, int end)
 			}
 
 			//velocity updates for the particle
-			if (elements[t].Loss == 1.0f)
-			{
-				parts[i].vx = 0;
-				parts[i].vy = 0;
-			}
+			parts[i].vx *= elements[t].Loss;
+			parts[i].vy *= elements[t].Loss;
 
 			//particle gets velocity from the vx and vy maps
 			float density = GetAirDensity(x / CELL, y / CELL);
