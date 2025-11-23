@@ -60,7 +60,7 @@ public:
 private:
 	bool initialized = false;
 	ComputeShader shader;
-	unsigned int ssbo_out, ssbo_flux1, ssbo_flux2, ssbo_flux3, ssbo_flux4, ssbo_in, ssbo_config;
+	unsigned int ssbo_out, ssbo_flux1, ssbo_flux2, ssbo_flux3, ssbo_flux4, ssbo_flux, ssbo_in, ssbo_config;
 	CellData tmp_buf[XCELLS * YCELLS];
 };
 

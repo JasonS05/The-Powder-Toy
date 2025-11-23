@@ -30,24 +30,24 @@ layout(std430, binding = 1) readonly restrict buffer DataInStruct {
 	float dataIn[];
 };
 
-layout(std430, binding = 2) readonly restrict buffer DataFlux1Struct {
-	vec4 dataFlux1[];
+layout(std430, binding = 2) readonly restrict buffer FluxIn1Struct {
+	vec4 fluxIn1[];
 };
 
-layout(std430, binding = 3) readonly restrict buffer DataFlux2Struct {
-	vec4 dataFlux2[];
+layout(std430, binding = 3) readonly restrict buffer FluxIn2Struct {
+	vec4 fluxIn2[];
 };
 
-layout(std430, binding = 4) readonly restrict buffer DataFlux3Struct {
-	vec4 dataFlux3[];
+layout(std430, binding = 4) readonly restrict buffer FluxIn3Struct {
+	vec4 fluxIn3[];
 };
 
-layout(std430, binding = 5) readonly restrict buffer DataFlux4Struct {
-	vec4 dataFlux4[];
+layout(std430, binding = 5) readonly restrict buffer FluxIn4Struct {
+	vec4 fluxIn4[];
 };
 
-layout(std430, binding = 6) restrict buffer DataFluxStruct {
-	vec4 dataFlux[];
+layout(std430, binding = 6) writeonly restrict buffer FluxOutStruct {
+	vec4 fluxOut[];
 };
 
 layout(std430, binding = 7) readonly restrict buffer ConfigStruct {
@@ -67,10 +67,11 @@ layout(std430, binding = 7) readonly restrict buffer ConfigStruct {
 	float MIN_TPT_PRESSURE;
 };
 
-layout(location = 1) uniform int passNumber = 1; // varies from 1 to 8
+layout(location = 1) uniform int function = 1; // varies from 1 to 4
+layout(location = 2) uniform float dtMultiplier; // always either 0.5 or 1
 
-layout(location = 2) uniform float ambientAirTemp;
-layout(location = 3) uniform int aheat_enable;
+layout(location = 3) uniform float ambientAirTemp;
+layout(location = 4) uniform int aheat_enable;
 
 struct CellData {
 	float vx;
@@ -232,7 +233,7 @@ vec4 getFlux(vec4 cell, float temperature) {
 	return exponents.yxxz * cell.zyzz + vec4(0, 0, 0, cell.z * exponents.x * (temperature * (degreesOfFreedom - 1) + 0.5 * cell.y * cell.y / (cell.z * cell.z)));
 }
 
-void main1() {
+void computeFluxes() {
 	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
 	int x = pos.x;
 	int y = pos.y;
@@ -329,15 +330,13 @@ void main1() {
 		rightFlux = vec4(0);
 	}
 
-	dataFlux[(y * XCELLS + x) * 4 + 0] = upperFlux;
-	dataFlux[(y * XCELLS + x) * 4 + 1] = lowerFlux;
-	dataFlux[(y * XCELLS + x) * 4 + 2] = leftFlux;
-	dataFlux[(y * XCELLS + x) * 4 + 3] = rightFlux;
+	fluxOut[(y * XCELLS + x) * 4 + 0] = upperFlux;
+	fluxOut[(y * XCELLS + x) * 4 + 1] = lowerFlux;
+	fluxOut[(y * XCELLS + x) * 4 + 2] = leftFlux;
+	fluxOut[(y * XCELLS + x) * 4 + 3] = rightFlux;
 }
 
-float dtMultiplier = 1.0;
-
-void main2() {
+void eulerIntegrate() {
 	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
 	int x = pos.x;
 	int y = pos.y;
@@ -355,10 +354,10 @@ void main2() {
 		int leftX  = x - 1;
 		int rightX = x + 1;
 
-		vec4 upperFlux = dataFlux[(y * XCELLS + x) * 4 + 0] + dataFlux[(upperY * XCELLS + x     ) * 4 + 1];
-		vec4 lowerFlux = dataFlux[(y * XCELLS + x) * 4 + 1] + dataFlux[(lowerY * XCELLS + x     ) * 4 + 0];
-		vec4 leftFlux  = dataFlux[(y * XCELLS + x) * 4 + 2] + dataFlux[(y      * XCELLS + leftX ) * 4 + 3];
-		vec4 rightFlux = dataFlux[(y * XCELLS + x) * 4 + 3] + dataFlux[(y      * XCELLS + rightX) * 4 + 2];
+		vec4 upperFlux = fluxIn1[(y * XCELLS + x) * 4 + 0] + fluxIn1[(upperY * XCELLS + x     ) * 4 + 1];
+		vec4 lowerFlux = fluxIn1[(y * XCELLS + x) * 4 + 1] + fluxIn1[(lowerY * XCELLS + x     ) * 4 + 0];
+		vec4 leftFlux  = fluxIn1[(y * XCELLS + x) * 4 + 2] + fluxIn1[(y      * XCELLS + leftX ) * 4 + 3];
+		vec4 rightFlux = fluxIn1[(y * XCELLS + x) * 4 + 3] + fluxIn1[(y      * XCELLS + rightX) * 4 + 2];
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt * dtMultiplier;
 	} else {
@@ -371,7 +370,7 @@ void main2() {
 float third = 1.0 / 3.0;
 float sixth = 1.0 / 6.0;
 
-void main3() {
+void RK4Integrate() {
 	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
 	int x = pos.x;
 	int y = pos.y;
@@ -391,25 +390,30 @@ void main3() {
 
 		// Runge-Kutta 4
 
-		vec4 upperFlux = (dataFlux1[(y * XCELLS + x) * 4 + 0] + dataFlux1[(upperY * XCELLS + x     ) * 4 + 1]) * sixth;
-		vec4 lowerFlux = (dataFlux1[(y * XCELLS + x) * 4 + 1] + dataFlux1[(lowerY * XCELLS + x     ) * 4 + 0]) * sixth;
-		vec4 leftFlux  = (dataFlux1[(y * XCELLS + x) * 4 + 2] + dataFlux1[(y      * XCELLS + leftX ) * 4 + 3]) * sixth;
-		vec4 rightFlux = (dataFlux1[(y * XCELLS + x) * 4 + 3] + dataFlux1[(y      * XCELLS + rightX) * 4 + 2]) * sixth;
+		vec4 upperFlux = vec4(0);
+		vec4 lowerFlux = vec4(0);
+		vec4 leftFlux  = vec4(0);
+		vec4 rightFlux = vec4(0);
 
-		upperFlux += (dataFlux2[(y * XCELLS + x) * 4 + 0] + dataFlux2[(upperY * XCELLS + x     ) * 4 + 1]) * third;
-		lowerFlux += (dataFlux2[(y * XCELLS + x) * 4 + 1] + dataFlux2[(lowerY * XCELLS + x     ) * 4 + 0]) * third;
-		leftFlux  += (dataFlux2[(y * XCELLS + x) * 4 + 2] + dataFlux2[(y      * XCELLS + leftX ) * 4 + 3]) * third;
-		rightFlux += (dataFlux2[(y * XCELLS + x) * 4 + 3] + dataFlux2[(y      * XCELLS + rightX) * 4 + 2]) * third;
+		upperFlux += (fluxIn1[(y * XCELLS + x) * 4 + 0] + fluxIn1[(upperY * XCELLS + x     ) * 4 + 1]) * sixth;
+		lowerFlux += (fluxIn1[(y * XCELLS + x) * 4 + 1] + fluxIn1[(lowerY * XCELLS + x     ) * 4 + 0]) * sixth;
+		leftFlux  += (fluxIn1[(y * XCELLS + x) * 4 + 2] + fluxIn1[(y      * XCELLS + leftX ) * 4 + 3]) * sixth;
+		rightFlux += (fluxIn1[(y * XCELLS + x) * 4 + 3] + fluxIn1[(y      * XCELLS + rightX) * 4 + 2]) * sixth;
 
-		upperFlux += (dataFlux3[(y * XCELLS + x) * 4 + 0] + dataFlux3[(upperY * XCELLS + x     ) * 4 + 1]) * third;
-		lowerFlux += (dataFlux3[(y * XCELLS + x) * 4 + 1] + dataFlux3[(lowerY * XCELLS + x     ) * 4 + 0]) * third;
-		leftFlux  += (dataFlux3[(y * XCELLS + x) * 4 + 2] + dataFlux3[(y      * XCELLS + leftX ) * 4 + 3]) * third;
-		rightFlux += (dataFlux3[(y * XCELLS + x) * 4 + 3] + dataFlux3[(y      * XCELLS + rightX) * 4 + 2]) * third;
+		upperFlux += (fluxIn2[(y * XCELLS + x) * 4 + 0] + fluxIn2[(upperY * XCELLS + x     ) * 4 + 1]) * third;
+		lowerFlux += (fluxIn2[(y * XCELLS + x) * 4 + 1] + fluxIn2[(lowerY * XCELLS + x     ) * 4 + 0]) * third;
+		leftFlux  += (fluxIn2[(y * XCELLS + x) * 4 + 2] + fluxIn2[(y      * XCELLS + leftX ) * 4 + 3]) * third;
+		rightFlux += (fluxIn2[(y * XCELLS + x) * 4 + 3] + fluxIn2[(y      * XCELLS + rightX) * 4 + 2]) * third;
 
-		upperFlux += (dataFlux4[(y * XCELLS + x) * 4 + 0] + dataFlux4[(upperY * XCELLS + x     ) * 4 + 1]) * sixth;
-		lowerFlux += (dataFlux4[(y * XCELLS + x) * 4 + 1] + dataFlux4[(lowerY * XCELLS + x     ) * 4 + 0]) * sixth;
-		leftFlux  += (dataFlux4[(y * XCELLS + x) * 4 + 2] + dataFlux4[(y      * XCELLS + leftX ) * 4 + 3]) * sixth;
-		rightFlux += (dataFlux4[(y * XCELLS + x) * 4 + 3] + dataFlux4[(y      * XCELLS + rightX) * 4 + 2]) * sixth;
+		upperFlux += (fluxIn3[(y * XCELLS + x) * 4 + 0] + fluxIn3[(upperY * XCELLS + x     ) * 4 + 1]) * third;
+		lowerFlux += (fluxIn3[(y * XCELLS + x) * 4 + 1] + fluxIn3[(lowerY * XCELLS + x     ) * 4 + 0]) * third;
+		leftFlux  += (fluxIn3[(y * XCELLS + x) * 4 + 2] + fluxIn3[(y      * XCELLS + leftX ) * 4 + 3]) * third;
+		rightFlux += (fluxIn3[(y * XCELLS + x) * 4 + 3] + fluxIn3[(y      * XCELLS + rightX) * 4 + 2]) * third;
+
+		upperFlux += (fluxIn4[(y * XCELLS + x) * 4 + 0] + fluxIn4[(upperY * XCELLS + x     ) * 4 + 1]) * sixth;
+		lowerFlux += (fluxIn4[(y * XCELLS + x) * 4 + 1] + fluxIn4[(lowerY * XCELLS + x     ) * 4 + 0]) * sixth;
+		leftFlux  += (fluxIn4[(y * XCELLS + x) * 4 + 2] + fluxIn4[(y      * XCELLS + leftX ) * 4 + 3]) * sixth;
+		rightFlux += (fluxIn4[(y * XCELLS + x) * 4 + 3] + fluxIn4[(y      * XCELLS + rightX) * 4 + 2]) * sixth;
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt;
 	} else {
@@ -420,28 +424,18 @@ void main3() {
 }
 
 void main() {
-	if (passNumber == 1) {
-		main1();
-	} else if (passNumber == 2) {
-		dtMultiplier = 0.5;
+	switch (function) {
+	case 1:
+		computeFluxes();
+		break;
 
-		main2();
-	} else if (passNumber == 3) {
-		main1();
-	} else if (passNumber == 4) {
-		dtMultiplier = 0.5;
+	case 2:
+		eulerIntegrate();
+		break;
 
-		main2();
-	} else if (passNumber == 5) {
-		main1();
-	} else if (passNumber == 6) {
-		dtMultiplier = 1.0;
-
-		main2();
-	} else if (passNumber == 7) {
-		main1();
-	} else { // passNumber == 8
-		main3();
+	case 3:
+		RK4Integrate();
+		break;
 	}
 }
 	)"));
@@ -466,6 +460,10 @@ void main() {
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_flux4);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, FLUX_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
 
+	glGenBuffers(1, &ssbo_flux);
+	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_flux);
+	glBufferData(GL_SHADER_STORAGE_BUFFER, FLUX_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
+
 	glGenBuffers(1, &ssbo_out);
 	glBindBuffer(GL_SHADER_STORAGE_BUFFER, ssbo_out);
 	glBufferData(GL_SHADER_STORAGE_BUFFER, CELL_BUFFER_SIZE, NULL, GL_DYNAMIC_DRAW);
@@ -485,72 +483,101 @@ AirShader::~AirShader() {
 	glDeleteBuffers(1, &ssbo_flux2);
 	glDeleteBuffers(1, &ssbo_flux3);
 	glDeleteBuffers(1, &ssbo_flux4);
+	glDeleteBuffers(1, &ssbo_flux);
 	glDeleteBuffers(1, &ssbo_out);
 	glDeleteBuffers(1, &ssbo_config);
 }
 
+// these structs should be enums but I don't want to pollute the namespace and "enum class" (or "enum struct") syntax requires I cast to unsigned int everywhere
+struct BUFFER_BINDING final {
+	static const unsigned int dataOut = 0;
+	static const unsigned int dataIn  = 1;
+	static const unsigned int fluxIn1 = 2;
+	static const unsigned int fluxIn2 = 3;
+	static const unsigned int fluxIn3 = 4;
+	static const unsigned int fluxIn4 = 5;
+	static const unsigned int fluxOut = 6;
+	static const unsigned int config  = 7;
+};
+
+struct UNIFORM_BINDING final {
+	static const unsigned int function       = 1;
+	static const unsigned int dtMultiplier   = 2;
+	static const unsigned int ambientAirTemp = 3;
+	static const unsigned int aheat_enable   = 4;
+};
+
+struct SHADER_FUNCTION final {
+	static const int computeFluxes  = 1; // uses dataIn, fluxOut
+	static const int eulerIntegrate = 2; // uses dataOut, dataIn, fluxIn1, dtMultiplier
+	static const int RK4Integrate   = 3; // uses dataOut, dataIn, fluxIn1, fluxIn2, fluxIn3, fluxIn4
+};
+
 void AirShader::run(int repetitions, Air *air) {
 	shader.enable();
-	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 7, ssbo_config);
-	glUniform1f(2, std::max(air->ambientAirTemp, 73.15f));
-	glUniform1i(3, air->sim.aheat_enable);
+	glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::config, ssbo_config);
+	glUniform1f(UNIFORM_BINDING::ambientAirTemp, std::max(air->ambientAirTemp, 73.15f));
+	glUniform1i(UNIFORM_BINDING::aheat_enable, air->sim.aheat_enable);
 
 	for (int i = 0; i < repetitions; i++) {
 		// Runge-Kutta 4
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssbo_flux1); // output
-		glUniform1i(1, 1);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_in);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux1);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeFluxes);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // output
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssbo_flux1); // input
-		glUniform1i(1, 2);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataOut, ssbo_out);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_in);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn1, ssbo_flux1);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::eulerIntegrate);
+		glUniform1f(UNIFORM_BINDING::dtMultiplier, 0.5f);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_out); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssbo_flux2); // output
-		glUniform1i(1, 3);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux2);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeFluxes);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // output
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssbo_flux2); // input
-		glUniform1i(1, 4);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataOut, ssbo_out);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_in);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn1, ssbo_flux2);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::eulerIntegrate);
+		glUniform1f(UNIFORM_BINDING::dtMultiplier, 0.5f);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_out); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssbo_flux3); // output
-		glUniform1i(1, 5);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux3);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeFluxes);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // output
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssbo_flux3); // input
-		glUniform1i(1, 6);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataOut, ssbo_out);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_in);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn1, ssbo_flux3);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::eulerIntegrate);
+		glUniform1f(UNIFORM_BINDING::dtMultiplier, 1.0f);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_out); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 6, ssbo_flux4); // output
-		glUniform1i(1, 7);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux4);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeFluxes);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 0, ssbo_out); // output
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 1, ssbo_in); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 2, ssbo_flux1); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 3, ssbo_flux2); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 4, ssbo_flux3); // input
-		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, 5, ssbo_flux4); // input
-		glUniform1i(1, 8);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataOut, ssbo_out);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_in);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn1, ssbo_flux1);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn2, ssbo_flux2);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn3, ssbo_flux3);
+		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn4, ssbo_flux4);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::RK4Integrate);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		auto temp = ssbo_out;
