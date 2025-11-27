@@ -194,6 +194,71 @@ void setCell(ivec2 pos, CellData data) {
 	dataOut[(y * XCELLS + x) * dataSize + wallOffset] = data.wall ? 1.0 : 0.0;
 }
 
+void computeEdgeValues() {
+	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
+	int x = pos.x;
+	int y = pos.y;
+
+	if (x >= XCELLS || y >= YCELLS) {
+		return;
+	}
+
+	vec4 upperEdge = vec4(0);
+	vec4 lowerEdge = vec4(0);
+	vec4 leftEdge  = vec4(0);
+	vec4 rightEdge = vec4(0);
+
+	CellData thisCellData = getCell(pos, toCellData(vec4(0), false));
+
+	if (!thisCellData.wall) {
+		vec4 thisCell = toVec4(thisCellData);
+
+		CellData upperCellData = CellData(0, 0, 0, 0, false);
+		CellData lowerCellData = CellData(0, 0, 0, 0, false);
+		CellData leftCellData  = CellData(0, 0, 0, 0, false);
+		CellData rightCellData = CellData(0, 0, 0, 0, false);
+
+		if (x != 0 && x != XCELLS - 1 && y != 0 && y != YCELLS - 1) {
+			upperCellData = getCell(pos + ivec2( 0, -1), thisCellData);
+			lowerCellData = getCell(pos + ivec2( 0,  1), thisCellData);
+			leftCellData  = getCell(pos + ivec2(-1,  0), thisCellData);
+			rightCellData = getCell(pos + ivec2( 1,  0), thisCellData);
+
+			vec4 upperCell = fromConservedQuantities(upperCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(upperCellData));
+			vec4 lowerCell = fromConservedQuantities(lowerCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(lowerCellData));
+			vec4 leftCell  = fromConservedQuantities(leftCellData.wall  ? thisCell * vec4(-1, 1, 1, 1) : toVec4(leftCellData ));
+			vec4 rightCell = fromConservedQuantities(rightCellData.wall ? thisCell * vec4(-1, 1, 1, 1) : toVec4(rightCellData));
+			vec4 thisCell2 = fromConservedQuantities(thisCell);
+
+			vec4 logUpperCell = vec4(upperCell.xy, log(upperCell.zw));
+			vec4 logLowerCell = vec4(lowerCell.xy, log(lowerCell.zw));
+			vec4 logLeftCell  = vec4(leftCell .xy, log(leftCell .zw));
+			vec4 logRightCell = vec4(rightCell.xy, log(rightCell.zw));
+			vec4 logThisCell  = vec4(thisCell2.xy, log(thisCell2.zw));
+
+			vec4 logUpperEdge = logThisCell + (logUpperCell - logLowerCell) * 0.25;
+			vec4 logLowerEdge = logThisCell + (logLowerCell - logUpperCell) * 0.25;
+			vec4 logLeftEdge  = logThisCell + (logLeftCell  - logRightCell) * 0.25;
+			vec4 logRightEdge = logThisCell + (logRightCell - logLeftCell ) * 0.25;
+
+			upperEdge = vec4(logUpperEdge.xy, exp(logUpperEdge.zw));
+			lowerEdge = vec4(logLowerEdge.xy, exp(logLowerEdge.zw));
+			leftEdge  = vec4(logLeftEdge .xy, exp(logLeftEdge .zw));
+			rightEdge = vec4(logRightEdge.xy, exp(logRightEdge.zw));
+		} else {
+			upperEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
+			lowerEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
+			leftEdge  = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
+			rightEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
+		}
+	}
+
+	fluxOut[(y * XCELLS + x) * 4 + 0] = upperEdge;
+	fluxOut[(y * XCELLS + x) * 4 + 1] = lowerEdge;
+	fluxOut[(y * XCELLS + x) * 4 + 2] = leftEdge;
+	fluxOut[(y * XCELLS + x) * 4 + 3] = rightEdge;
+}
+
 const float PI  = 3.14159265359;
 const float TAU = 2.0 * PI;
 
@@ -233,107 +298,87 @@ vec4 getFlux(vec4 cell, float temperature) {
 	return exponents.yxxz * cell.zyzz + vec4(0, 0, 0, cell.z * exponents.x * (temperature * (degreesOfFreedom - 1) + 0.5 * cell.y * cell.y / (cell.z * cell.z)));
 }
 
-void computeFluxes() {
-	ivec2 pos = ivec2(gl_GlobalInvocationID.xy);
-	int x = pos.x;
-	int y = pos.y;
+vec4 specialClamp(vec4 x, vec4 bound1, vec4 bound2, vec4 bound3) {
+	vec4 lowerBound = min(bound1, min(bound2, bound3));
+	vec4 upperBound = max(bound1, max(bound2, bound3));
 
-	if (x >= XCELLS || y >= YCELLS) {
-		return;
+	return clamp(x, lowerBound, upperBound);
+}
+
+vec4 getFluxUp(vec4 thisCell, vec4 otherCell, vec4 lowerValue, vec4 upperValue, bool otherCellIsWall, int x, int y) {
+	vec4 newLowerValue = specialClamp(lowerValue, thisCell, otherCell, upperValue);
+	vec4 newUpperValue = specialClamp(upperValue, thisCell, otherCell, lowerValue);
+
+	if (y == 1) {
+		newUpperValue = upperValue;
 	}
 
-	vec4 upperFlux = vec4(0);
-	vec4 lowerFlux = vec4(0);
-	vec4 leftFlux  = vec4(0);
-	vec4 rightFlux = vec4(0);
+	vec4 result = getFlux(toConservedQuantities(newLowerValue).yxzw, newLowerValue.w).yxzw;
 
-	CellData thisCellData = getCell(pos, toCellData(vec4(0), false));
-
-	if (!thisCellData.wall) {
-		vec4 thisCell = toVec4(thisCellData);
-
-		CellData upperCellData = CellData(0, 0, 0, 0, false);
-		CellData lowerCellData = CellData(0, 0, 0, 0, false);
-		CellData leftCellData  = CellData(0, 0, 0, 0, false);
-		CellData rightCellData = CellData(0, 0, 0, 0, false);
-
-		vec4 upperEdge;
-		vec4 lowerEdge;
-		vec4 leftEdge;
-		vec4 rightEdge;
-
-		if (x != 0 && x != XCELLS - 1 && y != 0 && y != YCELLS - 1) {
-			upperCellData = getCell(pos + ivec2( 0, -1), thisCellData);
-			lowerCellData = getCell(pos + ivec2( 0,  1), thisCellData);
-			leftCellData  = getCell(pos + ivec2(-1,  0), thisCellData);
-			rightCellData = getCell(pos + ivec2( 1,  0), thisCellData);
-
-			vec4 upperCell = fromConservedQuantities(upperCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(upperCellData));
-			vec4 lowerCell = fromConservedQuantities(lowerCellData.wall ? thisCell * vec4(1, -1, 1, 1) : toVec4(lowerCellData));
-			vec4 leftCell  = fromConservedQuantities(leftCellData.wall  ? thisCell * vec4(-1, 1, 1, 1) : toVec4(leftCellData ));
-			vec4 rightCell = fromConservedQuantities(rightCellData.wall ? thisCell * vec4(-1, 1, 1, 1) : toVec4(rightCellData));
-			vec4 thisCell2 = fromConservedQuantities(thisCell);
-
-			vec4 logUpperCell = vec4(upperCell.xy, log(upperCell.zw));
-			vec4 logLowerCell = vec4(lowerCell.xy, log(lowerCell.zw));
-			vec4 logLeftCell  = vec4(leftCell .xy, log(leftCell .zw));
-			vec4 logRightCell = vec4(rightCell.xy, log(rightCell.zw));
-			vec4 logThisCell  = vec4(thisCell2.xy, log(thisCell2.zw));
-
-			vec4 logUpperEdge = logThisCell + (logUpperCell - logLowerCell) * 0.25;
-			vec4 logLowerEdge = logThisCell + (logLowerCell - logUpperCell) * 0.25;
-			vec4 logLeftEdge  = logThisCell + (logLeftCell  - logRightCell) * 0.25;
-			vec4 logRightEdge = logThisCell + (logRightCell - logLeftCell ) * 0.25;
-
-			upperEdge = vec4(logUpperEdge.xy, exp(logUpperEdge.zw));
-			lowerEdge = vec4(logLowerEdge.xy, exp(logLowerEdge.zw));
-			leftEdge  = vec4(logLeftEdge .xy, exp(logLeftEdge .zw));
-			rightEdge = vec4(logRightEdge.xy, exp(logRightEdge.zw));
-		} else {
-			upperEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
-			lowerEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
-			leftEdge  = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
-			rightEdge = vec4(0, 0, DEFAULT_PRESSURE, ambientAirTemp * (0.5 / 295.15));
-		}
-
-		vec4 temperature = vec4(upperEdge.w, lowerEdge.w, leftEdge.w, rightEdge.w);
-
-		upperEdge = toConservedQuantities(upperEdge);
-		lowerEdge = toConservedQuantities(lowerEdge);
-		leftEdge  = toConservedQuantities(leftEdge );
-		rightEdge = toConservedQuantities(rightEdge);
-
-		upperFlux = getFlux(upperEdge.yxzw                    , temperature.x).yxzw                       ;
-		lowerFlux = getFlux(lowerEdge.yxzw * vec4(-1, 1, 1, 1), temperature.y).yxzw * vec4(-1,  1, -1, -1);
-		leftFlux  = getFlux(leftEdge       * vec4(-1, 1, 1, 1), temperature.z)      * vec4( 1, -1, -1, -1);
-		rightFlux = getFlux(rightEdge                         , temperature.w)                            ;
-
-		if (upperCellData.wall) {
-			upperFlux *= vec4(0.0, 2.0, 0.0, 0.0);
-		}
-
-		if (lowerCellData.wall) {
-			lowerFlux *= vec4(0.0, 2.0, 0.0, 0.0);
-		}
-
-		if (leftCellData.wall) {
-			leftFlux *= vec4(2.0, 0.0, 0.0, 0.0);
-		}
-
-		if (rightCellData.wall) {
-			rightFlux *= vec4(2.0, 0.0, 0.0, 0.0);
-		}
+	if (otherCellIsWall) {
+		result *= vec4(0.0, 2.0, 0.0, 0.0);
 	} else {
-		upperFlux = vec4(0);
-		lowerFlux = vec4(0);
-		leftFlux  = vec4(0);
-		rightFlux = vec4(0);
+		result += getFlux(toConservedQuantities(newUpperValue).yxzw * vec4(-1, 1, 1, 1), newUpperValue.w).yxzw * vec4(-1, 1, -1, -1);
 	}
 
-	fluxOut[(y * XCELLS + x) * 4 + 0] = upperFlux;
-	fluxOut[(y * XCELLS + x) * 4 + 1] = lowerFlux;
-	fluxOut[(y * XCELLS + x) * 4 + 2] = leftFlux;
-	fluxOut[(y * XCELLS + x) * 4 + 3] = rightFlux;
+	return result;
+}
+
+vec4 getFluxDown(vec4 thisCell, vec4 otherCell, vec4 upperValue, vec4 lowerValue, bool otherCellIsWall, int x, int y) {
+	vec4 newUpperValue = specialClamp(upperValue, thisCell, otherCell, lowerValue);
+	vec4 newLowerValue = specialClamp(lowerValue, thisCell, otherCell, upperValue);
+
+	if (y == YCELLS - 2) {
+		newLowerValue = lowerValue;
+	}
+
+	vec4 result = getFlux(toConservedQuantities(newUpperValue).yxzw * vec4(-1, 1, 1, 1), newUpperValue.w).yxzw * vec4(-1, 1, -1, -1);
+
+	if (otherCellIsWall) {
+		result *= vec4(0.0, 2.0, 0.0, 0.0);
+	} else {
+		result += getFlux(toConservedQuantities(newLowerValue).yxzw, newLowerValue.w).yxzw;
+	}
+
+	return result;
+}
+
+vec4 getFluxLeft(vec4 thisCell, vec4 otherCell, vec4 rightValue, vec4 leftValue, bool otherCellIsWall, int x, int y) {
+	vec4 newRightValue = specialClamp(rightValue, thisCell, otherCell, leftValue);
+	vec4 newLeftValue = specialClamp(leftValue, thisCell, otherCell, rightValue);
+
+	if (x == 1) {
+		newLeftValue = leftValue;
+	}
+
+	vec4 result = getFlux(toConservedQuantities(newRightValue) * vec4(-1, 1, 1, 1), newRightValue.w) * vec4(1, -1, -1, -1);
+
+	if (otherCellIsWall) {
+		result *= vec4(2.0, 0.0, 0.0, 0.0);
+	} else {
+		result += getFlux(toConservedQuantities(newLeftValue), newLeftValue.w);
+	}
+
+	return result;
+}
+
+vec4 getFluxRight(vec4 thisCell, vec4 otherCell, vec4 leftValue, vec4 rightValue, bool otherCellIsWall, int x, int y) {
+	vec4 newLeftValue = specialClamp(leftValue, thisCell, otherCell, rightValue);
+	vec4 newRightValue = specialClamp(rightValue, thisCell, otherCell, leftValue);
+
+	if (x == XCELLS - 2) {
+		newRightValue = rightValue;
+	}
+
+	vec4 result = getFlux(toConservedQuantities(newLeftValue), newLeftValue.w);
+
+	if (otherCellIsWall) {
+		result *= vec4(2.0, 0.0, 0.0, 0.0);
+	} else {
+		result += getFlux(toConservedQuantities(newRightValue) * vec4(-1, 1, 1, 1), newRightValue.w) * vec4(1, -1, -1, -1);
+	}
+
+	return result;
 }
 
 void eulerIntegrate() {
@@ -347,6 +392,17 @@ void eulerIntegrate() {
 
 	CellData thisCellData = getCell(pos, CellData(0, 0, 0, 0, false));
 	vec4 thisCell = toVec4(thisCellData);
+	vec4 thisCell2 = fromConservedQuantities(thisCell);
+
+	CellData upperCellData = getCell(pos + ivec2( 0, -1), toCellData(vec4(0), false));
+	CellData lowerCellData = getCell(pos + ivec2( 0,  1), toCellData(vec4(0), false));
+	CellData leftCellData  = getCell(pos + ivec2(-1,  0), toCellData(vec4(0), false));
+	CellData rightCellData = getCell(pos + ivec2( 1,  0), toCellData(vec4(0), false));
+
+	vec4 upperCellData2 = fromConservedQuantities(toVec4(upperCellData));
+	vec4 lowerCellData2 = fromConservedQuantities(toVec4(lowerCellData));
+	vec4 leftCellData2  = fromConservedQuantities(toVec4(leftCellData ));
+	vec4 rightCellData2 = fromConservedQuantities(toVec4(rightCellData));
 
 	if (!thisCellData.wall && x != 0 && x != XCELLS - 1 && y != 0 && y != YCELLS - 1) {
 		int upperY = y - 1;
@@ -354,10 +410,10 @@ void eulerIntegrate() {
 		int leftX  = x - 1;
 		int rightX = x + 1;
 
-		vec4 upperFlux = fluxIn1[(y * XCELLS + x) * 4 + 0] + fluxIn1[(upperY * XCELLS + x     ) * 4 + 1];
-		vec4 lowerFlux = fluxIn1[(y * XCELLS + x) * 4 + 1] + fluxIn1[(lowerY * XCELLS + x     ) * 4 + 0];
-		vec4 leftFlux  = fluxIn1[(y * XCELLS + x) * 4 + 2] + fluxIn1[(y      * XCELLS + leftX ) * 4 + 3];
-		vec4 rightFlux = fluxIn1[(y * XCELLS + x) * 4 + 3] + fluxIn1[(y      * XCELLS + rightX) * 4 + 2];
+		vec4 upperFlux = getFluxUp   (thisCell2, upperCellData2, fluxIn1[(y * XCELLS + x) * 4 + 1], fluxIn1[(upperY * XCELLS + x     ) * 4 + 1], upperCellData.wall, x, y);
+		vec4 lowerFlux = getFluxDown (thisCell2, lowerCellData2, fluxIn1[(y * XCELLS + x) * 4 + 1], fluxIn1[(lowerY * XCELLS + x     ) * 4 + 0], lowerCellData.wall, x, y);
+		vec4 leftFlux  = getFluxLeft (thisCell2, leftCellData2 , fluxIn1[(y * XCELLS + x) * 4 + 2], fluxIn1[(y      * XCELLS + leftX ) * 4 + 3], leftCellData.wall , x, y);
+		vec4 rightFlux = getFluxRight(thisCell2, rightCellData2, fluxIn1[(y * XCELLS + x) * 4 + 3], fluxIn1[(y      * XCELLS + rightX) * 4 + 2], rightCellData.wall, x, y);
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt * dtMultiplier;
 	} else {
@@ -381,6 +437,17 @@ void RK4Integrate() {
 
 	CellData thisCellData = getCell(pos, CellData(0, 0, 0, 0, false));
 	vec4 thisCell = toVec4(thisCellData);
+	vec4 thisCell2 = fromConservedQuantities(thisCell);
+
+	CellData upperCellData = getCell(pos + ivec2( 0, -1), toCellData(vec4(0), false));
+	CellData lowerCellData = getCell(pos + ivec2( 0,  1), toCellData(vec4(0), false));
+	CellData leftCellData  = getCell(pos + ivec2(-1,  0), toCellData(vec4(0), false));
+	CellData rightCellData = getCell(pos + ivec2( 1,  0), toCellData(vec4(0), false));
+
+	vec4 upperCellData2 = fromConservedQuantities(toVec4(upperCellData));
+	vec4 lowerCellData2 = fromConservedQuantities(toVec4(lowerCellData));
+	vec4 leftCellData2  = fromConservedQuantities(toVec4(leftCellData ));
+	vec4 rightCellData2 = fromConservedQuantities(toVec4(rightCellData));
 
 	if (!thisCellData.wall && x != 0 && x != XCELLS - 1 && y != 0 && y != YCELLS - 1) {
 		int upperY = y - 1;
@@ -395,25 +462,25 @@ void RK4Integrate() {
 		vec4 leftFlux  = vec4(0);
 		vec4 rightFlux = vec4(0);
 
-		upperFlux += (fluxIn1[(y * XCELLS + x) * 4 + 0] + fluxIn1[(upperY * XCELLS + x     ) * 4 + 1]) * sixth;
-		lowerFlux += (fluxIn1[(y * XCELLS + x) * 4 + 1] + fluxIn1[(lowerY * XCELLS + x     ) * 4 + 0]) * sixth;
-		leftFlux  += (fluxIn1[(y * XCELLS + x) * 4 + 2] + fluxIn1[(y      * XCELLS + leftX ) * 4 + 3]) * sixth;
-		rightFlux += (fluxIn1[(y * XCELLS + x) * 4 + 3] + fluxIn1[(y      * XCELLS + rightX) * 4 + 2]) * sixth;
+		upperFlux += getFluxUp   (thisCell2, upperCellData2, fluxIn1[(y * XCELLS + x) * 4 + 0], fluxIn1[(upperY * XCELLS + x     ) * 4 + 1], upperCellData.wall, x, y) * sixth;
+		lowerFlux += getFluxDown (thisCell2, lowerCellData2, fluxIn1[(y * XCELLS + x) * 4 + 1], fluxIn1[(lowerY * XCELLS + x     ) * 4 + 0], lowerCellData.wall, x, y) * sixth;
+		leftFlux  += getFluxLeft (thisCell2, leftCellData2 , fluxIn1[(y * XCELLS + x) * 4 + 2], fluxIn1[(y      * XCELLS + leftX ) * 4 + 3], leftCellData.wall , x, y) * sixth;
+		rightFlux += getFluxRight(thisCell2, rightCellData2, fluxIn1[(y * XCELLS + x) * 4 + 3], fluxIn1[(y      * XCELLS + rightX) * 4 + 2], rightCellData.wall, x, y) * sixth;
 
-		upperFlux += (fluxIn2[(y * XCELLS + x) * 4 + 0] + fluxIn2[(upperY * XCELLS + x     ) * 4 + 1]) * third;
-		lowerFlux += (fluxIn2[(y * XCELLS + x) * 4 + 1] + fluxIn2[(lowerY * XCELLS + x     ) * 4 + 0]) * third;
-		leftFlux  += (fluxIn2[(y * XCELLS + x) * 4 + 2] + fluxIn2[(y      * XCELLS + leftX ) * 4 + 3]) * third;
-		rightFlux += (fluxIn2[(y * XCELLS + x) * 4 + 3] + fluxIn2[(y      * XCELLS + rightX) * 4 + 2]) * third;
+		upperFlux += getFluxUp   (thisCell2, upperCellData2, fluxIn2[(y * XCELLS + x) * 4 + 0], fluxIn2[(upperY * XCELLS + x     ) * 4 + 1], upperCellData.wall, x, y) * third;
+		lowerFlux += getFluxDown (thisCell2, lowerCellData2, fluxIn2[(y * XCELLS + x) * 4 + 1], fluxIn2[(lowerY * XCELLS + x     ) * 4 + 0], lowerCellData.wall, x, y) * third;
+		leftFlux  += getFluxLeft (thisCell2, leftCellData2 , fluxIn2[(y * XCELLS + x) * 4 + 2], fluxIn2[(y      * XCELLS + leftX ) * 4 + 3], leftCellData.wall , x, y) * third;
+		rightFlux += getFluxRight(thisCell2, rightCellData2, fluxIn2[(y * XCELLS + x) * 4 + 3], fluxIn2[(y      * XCELLS + rightX) * 4 + 2], rightCellData.wall, x, y) * third;
 
-		upperFlux += (fluxIn3[(y * XCELLS + x) * 4 + 0] + fluxIn3[(upperY * XCELLS + x     ) * 4 + 1]) * third;
-		lowerFlux += (fluxIn3[(y * XCELLS + x) * 4 + 1] + fluxIn3[(lowerY * XCELLS + x     ) * 4 + 0]) * third;
-		leftFlux  += (fluxIn3[(y * XCELLS + x) * 4 + 2] + fluxIn3[(y      * XCELLS + leftX ) * 4 + 3]) * third;
-		rightFlux += (fluxIn3[(y * XCELLS + x) * 4 + 3] + fluxIn3[(y      * XCELLS + rightX) * 4 + 2]) * third;
+		upperFlux += getFluxUp   (thisCell2, upperCellData2, fluxIn3[(y * XCELLS + x) * 4 + 0], fluxIn3[(upperY * XCELLS + x     ) * 4 + 1], upperCellData.wall, x, y) * third;
+		lowerFlux += getFluxDown (thisCell2, lowerCellData2, fluxIn3[(y * XCELLS + x) * 4 + 1], fluxIn3[(lowerY * XCELLS + x     ) * 4 + 0], lowerCellData.wall, x, y) * third;
+		leftFlux  += getFluxLeft (thisCell2, leftCellData2 , fluxIn3[(y * XCELLS + x) * 4 + 2], fluxIn3[(y      * XCELLS + leftX ) * 4 + 3], leftCellData.wall , x, y) * third;
+		rightFlux += getFluxRight(thisCell2, rightCellData2, fluxIn3[(y * XCELLS + x) * 4 + 3], fluxIn3[(y      * XCELLS + rightX) * 4 + 2], rightCellData.wall, x, y) * third;
 
-		upperFlux += (fluxIn4[(y * XCELLS + x) * 4 + 0] + fluxIn4[(upperY * XCELLS + x     ) * 4 + 1]) * sixth;
-		lowerFlux += (fluxIn4[(y * XCELLS + x) * 4 + 1] + fluxIn4[(lowerY * XCELLS + x     ) * 4 + 0]) * sixth;
-		leftFlux  += (fluxIn4[(y * XCELLS + x) * 4 + 2] + fluxIn4[(y      * XCELLS + leftX ) * 4 + 3]) * sixth;
-		rightFlux += (fluxIn4[(y * XCELLS + x) * 4 + 3] + fluxIn4[(y      * XCELLS + rightX) * 4 + 2]) * sixth;
+		upperFlux += getFluxUp   (thisCell2, upperCellData2, fluxIn4[(y * XCELLS + x) * 4 + 0], fluxIn4[(upperY * XCELLS + x     ) * 4 + 1], upperCellData.wall, x, y) * sixth;
+		lowerFlux += getFluxDown (thisCell2, lowerCellData2, fluxIn4[(y * XCELLS + x) * 4 + 1], fluxIn4[(lowerY * XCELLS + x     ) * 4 + 0], lowerCellData.wall, x, y) * sixth;
+		leftFlux  += getFluxLeft (thisCell2, leftCellData2 , fluxIn4[(y * XCELLS + x) * 4 + 2], fluxIn4[(y      * XCELLS + leftX ) * 4 + 3], leftCellData.wall , x, y) * sixth;
+		rightFlux += getFluxRight(thisCell2, rightCellData2, fluxIn4[(y * XCELLS + x) * 4 + 3], fluxIn4[(y      * XCELLS + rightX) * 4 + 2], rightCellData.wall, x, y) * sixth;
 
 		thisCell += (leftFlux + lowerFlux - rightFlux - upperFlux) * dt;
 	} else {
@@ -426,7 +493,7 @@ void RK4Integrate() {
 void main() {
 	switch (function) {
 	case 1:
-		computeFluxes();
+		computeEdgeValues();
 		break;
 
 	case 2:
@@ -508,9 +575,9 @@ struct UNIFORM_BINDING final {
 };
 
 struct SHADER_FUNCTION final {
-	static const int computeFluxes  = 1; // uses dataIn, fluxOut
-	static const int eulerIntegrate = 2; // uses dataOut, dataIn, fluxIn1, dtMultiplier
-	static const int RK4Integrate   = 3; // uses dataOut, dataIn, fluxIn1, fluxIn2, fluxIn3, fluxIn4
+	static const int computeEdgeValues = 1; // uses dataIn, fluxOut
+	static const int eulerIntegrate    = 2; // uses dataOut, dataIn, fluxIn1, dtMultiplier
+	static const int RK4Integrate      = 3; // uses dataOut, dataIn, fluxIn1, fluxIn2, fluxIn3, fluxIn4
 };
 
 void AirShader::run(int repetitions, Air *air) {
@@ -525,7 +592,7 @@ void AirShader::run(int repetitions, Air *air) {
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_in);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux1);
-		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeFluxes);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeEdgeValues);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -539,7 +606,7 @@ void AirShader::run(int repetitions, Air *air) {
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux2);
-		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeFluxes);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeEdgeValues);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -553,7 +620,7 @@ void AirShader::run(int repetitions, Air *air) {
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux3);
-		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeFluxes);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeEdgeValues);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
@@ -567,7 +634,7 @@ void AirShader::run(int repetitions, Air *air) {
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux4);
-		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeFluxes);
+		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeEdgeValues);
 		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
