@@ -8,6 +8,22 @@
 #include "Funcs.h"
 #include <iostream>
 
+// 16x16x1 has good performance on my GTX 1650 Mobile
+#define WORKGROUP_X 16
+#define WORKGROUP_Y 16
+
+// #x converts x into a string. It needs to go through two stages so the preprocessor doesn't just turn the text of the argument into a string but actually evaluates that text as a macro first
+/*
+   example usage:
+
+   #define NUM 10
+   NUM -> 10
+   STRINGIFY_HELPER(NUM) -> "NUM"
+   STRINGIFY(NUM) -> "10"
+                                  */
+#define STRINGIFY_HELPER(x) #x
+#define STRINGIFY(x) STRINGIFY_HELPER(x)
+
 using namespace Voxren::Gl;
 
 AirShader::AirShader() {}
@@ -19,8 +35,7 @@ void AirShader::init() {
 	shader = std::move(ComputeShader(R"(
 #version 430
 
-// 16x16x1 has good performance on my laptop's GTX 1650
-layout (local_size_x = 16, local_size_y = 16, local_size_z = 1) in;
+layout (local_size_x = )" STRINGIFY(WORKGROUP_X) R"(, local_size_y = )" STRINGIFY(WORKGROUP_Y) R"(, local_size_z = 1) in;
 
 layout(std430, binding = 0) writeonly restrict buffer DataOutStruct {
 	float dataOut[];
@@ -67,7 +82,7 @@ layout(std430, binding = 7) readonly restrict buffer ConfigStruct {
 	float MIN_TPT_PRESSURE;
 };
 
-layout(location = 1) uniform int function = 1; // varies from 1 to 4
+layout(location = 1) uniform int function = 1; // varies from 1 to 3
 layout(location = 2) uniform float dtMultiplier; // always either 0.5 or 1
 
 layout(location = 3) uniform float ambientAirTemp;
@@ -593,7 +608,7 @@ void AirShader::run(int repetitions, Air *air) {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_in);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux1);
 		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeEdgeValues);
-		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader.dispatch((XCELLS - 1) / WORKGROUP_X + 1, (YCELLS - 1) / 8 + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataOut, ssbo_out);
@@ -601,13 +616,13 @@ void AirShader::run(int repetitions, Air *air) {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn1, ssbo_flux1);
 		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::eulerIntegrate);
 		glUniform1f(UNIFORM_BINDING::dtMultiplier, 0.5f);
-		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader.dispatch((XCELLS - 1) / WORKGROUP_X + 1, (YCELLS - 1) / WORKGROUP_Y + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux2);
 		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeEdgeValues);
-		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader.dispatch((XCELLS - 1) / WORKGROUP_X + 1, (YCELLS - 1) / WORKGROUP_Y + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataOut, ssbo_out);
@@ -615,13 +630,13 @@ void AirShader::run(int repetitions, Air *air) {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn1, ssbo_flux2);
 		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::eulerIntegrate);
 		glUniform1f(UNIFORM_BINDING::dtMultiplier, 0.5f);
-		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader.dispatch((XCELLS - 1) / WORKGROUP_X + 1, (YCELLS - 1) / WORKGROUP_Y + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux3);
 		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeEdgeValues);
-		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader.dispatch((XCELLS - 1) / WORKGROUP_X + 1, (YCELLS - 1) / WORKGROUP_Y + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataOut, ssbo_out);
@@ -629,13 +644,13 @@ void AirShader::run(int repetitions, Air *air) {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn1, ssbo_flux3);
 		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::eulerIntegrate);
 		glUniform1f(UNIFORM_BINDING::dtMultiplier, 1.0f);
-		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader.dispatch((XCELLS - 1) / WORKGROUP_X + 1, (YCELLS - 1) / WORKGROUP_Y + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataIn, ssbo_out);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxOut, ssbo_flux4);
 		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::computeEdgeValues);
-		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader.dispatch((XCELLS - 1) / WORKGROUP_X + 1, (YCELLS - 1) / WORKGROUP_Y + 1, 1);
 
 		glMemoryBarrier(GL_SHADER_STORAGE_BARRIER_BIT);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::dataOut, ssbo_out);
@@ -645,7 +660,7 @@ void AirShader::run(int repetitions, Air *air) {
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn3, ssbo_flux3);
 		glBindBufferBase(GL_SHADER_STORAGE_BUFFER, BUFFER_BINDING::fluxIn4, ssbo_flux4);
 		glUniform1i(UNIFORM_BINDING::function, SHADER_FUNCTION::RK4Integrate);
-		shader.dispatch((XCELLS - 1) / 16 + 1, (YCELLS - 1) / 16 + 1, 1);
+		shader.dispatch((XCELLS - 1) / WORKGROUP_X + 1, (YCELLS - 1) / WORKGROUP_Y + 1, 1);
 
 		auto temp = ssbo_out;
 		ssbo_out = ssbo_in;
